@@ -27,8 +27,8 @@ export default defineConfig(({ mode }) => {
           display: "standalone",
           orientation: "any",
           id: "rfe-foam-pro-desktop",
-          start_url: "./index.html",
-          scope: "./",
+          start_url: "/",
+          scope: "/",
           launch_handler: {
             client_mode: "focus-existing"
           },
