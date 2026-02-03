@@ -166,3 +166,13 @@ export const startJob = async (estimateId: string, spreadsheetId: string): Promi
   const result = await apiRequest({ action: 'START_JOB', payload: { estimateId, spreadsheetId } });
   return result.status === 'success';
 };
+
+// --- MESSAGING & HEARTBEAT ---
+
+export const sendMessage = async (estimateId: string, content: string, sender: 'Admin' | 'Crew', spreadsheetId: string) => {
+  return await apiRequest({ action: 'SEND_MESSAGE', payload: { estimateId, content, sender, spreadsheetId } });
+};
+
+export const heartbeat = async (spreadsheetId: string, lastSyncTimestamp?: string) => {
+  return await apiRequest({ action: 'HEARTBEAT', payload: { spreadsheetId, lastSyncTimestamp } });
+};

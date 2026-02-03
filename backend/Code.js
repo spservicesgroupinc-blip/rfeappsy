@@ -14,6 +14,7 @@ const CONSTANTS = {
     TAB_SETTINGS: "Settings_DB",
     TAB_INVENTORY: "Inventory_DB",
     TAB_EQUIPMENT: "Equipment_DB",
+    TAB_MESSAGES: "Messages_DB", // NEW
     TAB_PNL: "Profit_Loss_DB",
     TAB_LOGS: "Material_Log_DB",
     COL_JSON_ESTIMATE: 9,
@@ -72,6 +73,8 @@ function doPost(e) {
             switch (action) {
                 case 'SYNC_DOWN': result = handleSyncDown(userSS); break;
                 case 'SYNC_UP': result = handleSyncUp(userSS, payload); break;
+                case 'HEARTBEAT': result = handleHeartbeat(userSS, payload); break; // NEW
+                case 'SEND_MESSAGE': result = handleSendMessage(userSS, payload); break; // NEW
                 case 'START_JOB': result = handleStartJob(userSS, payload); break;
                 case 'COMPLETE_JOB': result = handleCompleteJob(userSS, payload); break;
                 case 'MARK_JOB_PAID': result = handleMarkJobPaid(userSS, payload); break;
@@ -165,6 +168,7 @@ function setupUserSheetSchema(ss, initialProfile) {
     }
     ensureSheet(ss, CONSTANTS.TAB_PNL, ["Date Paid", "Job ID", "Customer", "Invoice #", "Revenue", "Chem Cost", "Labor Cost", "Inv Cost", "Misc Cost", "Total COGS", "Net Profit", "Margin %"]);
     ensureSheet(ss, CONSTANTS.TAB_LOGS, ["Date", "Job ID", "Customer", "Material Name", "Quantity", "Unit", "Logged By", "JSON_DATA"]);
+    ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]); // NEW
     const sheet1 = ss.getSheetByName("Sheet1");
     if (sheet1) ss.deleteSheet(sheet1);
 }
@@ -377,7 +381,16 @@ function handleSavePdf(ss, p) {
             s.getRange(fd.getRow(), 8).setValue(url);
             try {
                 const j = safeParse(s.getRange(fd.getRow(), CONSTANTS.COL_JSON_ESTIMATE).getValue());
-                if (j) { j.pdfLink = url; s.getRange(fd.getRow(), CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(j)); }
+                if (j) {
+                    if (p.fileName.toLowerCase().includes('invoice')) {
+                        j.invoicePdfLink = url;
+                    } else if (p.fileName.toLowerCase().includes('completion') || p.fileName.toLowerCase().includes('report')) {
+                        j.completionReportLink = url;
+                    } else {
+                        j.pdfLink = url;
+                    }
+                    s.getRange(fd.getRow(), CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(j));
+                }
             } catch (e) { }
         }
     }
@@ -451,22 +464,12 @@ function handleCreateWorkOrder(ss, p) {
                 // 2. DEDUCT INVENTORY ITEMS
                 const deductedItems = [];
                 if (est.materials?.inventory && Array.isArray(est.materials.inventory)) {
-                    const invData = invSheet.getDataRange().getValues();
-                    const invMap = new Map();
-                    for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+                    // Use helper to deduct and log
+                    updateInventoryWithLog(ss, est.materials.inventory, false, est.id, est.customer?.name, "System (Work Order)");
 
+                    // Populate deductedItems for record keeping
                     est.materials.inventory.forEach(item => {
-                        let rowIdx = invMap.get(item.id);
-                        if (rowIdx) {
-                            const currentJson = safeParse(invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).getValue());
-                            if (currentJson) {
-                                const qty = Number(item.quantity) || 0;
-                                currentJson.quantity = (currentJson.quantity || 0) - qty;
-                                invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity);
-                                invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).setValue(JSON.stringify(currentJson));
-                                deductedItems.push({ id: item.id, quantity: qty });
-                            }
-                        }
+                        deductedItems.push({ id: item.id, quantity: item.quantity });
                     });
                 }
 
@@ -553,46 +556,27 @@ function handleCompleteJob(ss, payload) {
 
     // 2. UPDATE INVENTORY ITEMS (Inventory DB)
 
-    // Reconciliation for Items
-    if (est.inventoryDeducted && est.deductedValues?.inventory) {
-        const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
-        const invData = invSheet.getDataRange().getValues();
-        const invMap = new Map();
-        for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+    // 2. UPDATE INVENTORY ITEMS (Inventory DB)
 
-        // Add back deducted items
-        est.deductedValues.inventory.forEach(dedItem => {
-            let rowIdx = invMap.get(dedItem.id);
-            if (rowIdx) {
-                const currentJson = safeParse(invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).getValue());
-                if (currentJson) {
-                    currentJson.quantity = (currentJson.quantity || 0) + (Number(dedItem.quantity) || 0);
-                    invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity);
-                    invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).setValue(JSON.stringify(currentJson));
-                }
-            }
-        });
+    // A. Reconcile Pre-Deducted (Add Back ALL pre-deducted first)
+    if (est.inventoryDeducted && est.deductedValues?.inventory) {
+        updateInventoryWithLog(ss, est.deductedValues.inventory, true, estimateId, est.customer?.name, actuals.completedBy || "System");
     }
 
-    if (actuals.inventory && actuals.inventory.length > 0) {
-        const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
-        // Refresh Map just in case
-        const invData = invSheet.getDataRange().getValues();
-        const invMap = new Map();
-        for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+    // B. Deduct Actuals (Or Estimate Fallback if Actuals Empty)
+    // If actuals.inventory is defined, use it. If it is empty array [], it means 0 used.
+    // If it is undefined, fallback to estimate materials? (Usually frontend ensures actuals matches materials on load)
+    // We will trust actuals.inventory. If it's missing, we fallback to est.materials.inventory as a safety, assuming exact usage.
 
-        actuals.inventory.forEach(actItem => {
-            let rowIdx = invMap.get(actItem.id);
-            if (rowIdx) {
-                const currentJson = safeParse(invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).getValue());
-                if (currentJson) {
-                    const actQty = Number(actItem.quantity) || 0;
-                    currentJson.quantity = (currentJson.quantity || 0) - actQty;
-                    invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity);
-                    invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).setValue(JSON.stringify(currentJson));
-                }
-            }
-        });
+    let inventoryToDeduct = [];
+    if (actuals.inventory) {
+        inventoryToDeduct = actuals.inventory;
+    } else if (est.materials?.inventory) {
+        inventoryToDeduct = est.materials.inventory;
+    }
+
+    if (inventoryToDeduct.length > 0) {
+        updateInventoryWithLog(ss, inventoryToDeduct, false, estimateId, est.customer?.name, actuals.completedBy || "Crew");
     }
 
     // 3. UPDATE EQUIPMENT LOGS (Equipment DB)
@@ -691,6 +675,132 @@ function reconcileCompletedJobs(ss, incomingState) {
             if (dbEst.executionStatus === 'Completed' && incomingEst.executionStatus !== 'Completed') {
                 incomingState.savedEstimates[idx] = dbEst;
             }
+        }
+    });
+}
+
+// --- NEW FEATURES ---
+
+function handleHeartbeat(ss, payload) {
+    const { lastSyncTimestamp } = payload;
+    const lastSync = lastSyncTimestamp ? new Date(lastSyncTimestamp).getTime() : 0;
+
+    // 1. Get Job Updates
+    const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
+    const estData = estSheet.getDataRange().getValues();
+    const jobUpdates = [];
+
+    // Scan recent estimates for status changes or live status
+    for (let i = 1; i < estData.length; i++) {
+        const jsonColIndex = CONSTANTS.COL_JSON_ESTIMATE - 1;
+        if (estData[i].length <= jsonColIndex) continue;
+        const json = estData[i][jsonColIndex];
+        if (!json) continue;
+        const bs = estData[i][1]; // Date column? Or ID?
+        // Optimization: We parse everything for now, or could rely on ModifiedAt column if we added one. 
+        // For < 1000 jobs, parsing matches is fine.
+        const obj = safeParse(json);
+        if (obj) {
+            const modTime = obj.lastModified ? new Date(obj.lastModified).getTime() : 0;
+            const startAt = obj.actuals?.lastStartedAt ? new Date(obj.actuals.lastStartedAt).getTime() : 0;
+
+            // Check if modified recently OR is In Progress (always send 'In Progress' to ensure heartbeat keeps it alive)
+            if (modTime > lastSync || startAt > lastSync || obj.executionStatus === 'In Progress') {
+                jobUpdates.push(obj);
+            }
+        }
+    }
+
+    // 2. Get Messages
+    const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
+    const msgData = msgSheet.getDataRange().getValues();
+    const newMessages = [];
+
+    for (let i = 1; i < msgData.length; i++) {
+        const ts = msgData[i][4]; // Timestamp column
+        const msgTime = new Date(ts).getTime();
+        if (msgTime > lastSync) {
+            const json = msgData[i][6];
+            const obj = safeParse(json);
+            if (obj) newMessages.push(obj);
+        }
+    }
+
+    return {
+        jobUpdates,
+        messages: newMessages,
+        serverTime: new Date().toISOString()
+    };
+}
+
+function handleSendMessage(ss, payload) {
+    const { estimateId, content, sender } = payload;
+    const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
+
+    const msg = {
+        id: Utilities.getUuid(),
+        estimateId,
+        sender, // 'Admin' or 'Crew'
+        content,
+        timestamp: new Date().toISOString(),
+        readBy: []
+    };
+
+    msgSheet.appendRow([msg.id, estimateId, sender, content, msg.timestamp, "", JSON.stringify(msg)]);
+    return { success: true, message: msg };
+}
+
+// ROBUST INVENTORY LOGIC UPDATE
+function updateInventoryWithLog(ss, itemsToDeduct, isAddBack, jobId, customerName, techName) {
+    if (!itemsToDeduct || itemsToDeduct.length === 0) return;
+
+    const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
+    const logSheet = ss.getSheetByName(CONSTANTS.TAB_LOGS);
+    const data = invSheet.getDataRange().getValues(); // Refresh data
+    const itemMap = new Map(); // ID -> Row Index
+
+    // Map ID (Col A) to Row Index (1-based)
+    for (let i = 1; i < data.length; i++) {
+        itemMap.set(String(data[i][0]).trim(), i + 1);
+    }
+
+    itemsToDeduct.forEach(item => {
+        const itemId = String(item.id).trim();
+        const rowIdx = itemMap.get(itemId);
+        const qty = Number(item.quantity) || 0;
+        const itemName = item.name || "Unknown Item";
+
+        if (rowIdx && qty > 0) {
+            const jsonCell = invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY);
+            const currentJson = safeParse(jsonCell.getValue());
+
+            if (currentJson) {
+                if (isAddBack) {
+                    currentJson.quantity = (currentJson.quantity || 0) + qty;
+                } else {
+                    currentJson.quantity = (currentJson.quantity || 0) - qty;
+                }
+
+                // Update Sheet
+                invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity); // Col C = Quantity
+                jsonCell.setValue(JSON.stringify(currentJson));
+
+                // Log It
+                const action = isAddBack ? "Restock (Adjustment)" : "Deduction";
+                logSheet.appendRow([
+                    new Date(),
+                    jobId,
+                    customerName,
+                    itemName,
+                    isAddBack ? qty : -qty,
+                    item.unit || "",
+                    techName,
+                    JSON.stringify({ action, itemId, qty })
+                ]);
+            }
+        } else {
+            // Item not found, log error?
+            logSheet.appendRow([new Date(), jobId, customerName, `${itemName} (ID Not Found: ${itemId})`, 0, "-", "SYSTEM_ERROR", "{}"]);
         }
     });
 }

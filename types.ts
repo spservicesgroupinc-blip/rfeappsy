@@ -165,6 +165,15 @@ export interface CalculationResults {
   totalCost: number;
 }
 
+export interface Message {
+  id: string;
+  estimateId: string;
+  sender: 'Admin' | 'Crew';
+  content: string;
+  timestamp: string;
+  readBy?: string[];
+}
+
 export interface EstimateRecord {
   id: string;
   customerId: string;
@@ -244,6 +253,8 @@ export interface EstimateRecord {
 
   workOrderSheetUrl?: string;
   pdfLink?: string;
+  invoicePdfLink?: string; // NEW
+  completionReportLink?: string; // NEW
   sitePhotos?: string[];
   inventoryProcessed?: boolean;
   lastModified?: string;
@@ -296,6 +307,7 @@ export interface CalculatorState {
   savedEstimates: EstimateRecord[];
   purchaseOrders?: PurchaseOrder[];
   materialLogs?: MaterialUsageLogEntry[];
+  messages: Message[]; // NEW
 
   lifetimeUsage: {
     openCell: number;

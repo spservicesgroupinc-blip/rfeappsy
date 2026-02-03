@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { CalculatorState, EstimateRecord } from '../types';
 import { logCrewTime, completeJob, startJob } from '../services/api';
+import { ChatInterface } from './ChatInterface';
+
 
 interface CrewDashboardProps {
     state: CalculatorState;
@@ -372,6 +374,14 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
                             <div className="text-slate-500 font-medium text-lg leading-snug">
                                 {selectedJob.customer.address}<br />
                                 {selectedJob.customer.city}, {selectedJob.customer.state} {selectedJob.customer.zip}
+                            </div>
+
+                            {/* LIVE MESSAGING */}
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className="p-4 bg-slate-50 border-b border-slate-100 font-black uppercase text-[10px] tracking-widest text-slate-500 flex items-center gap-2">
+                                    <MessageSquare className="w-3 h-3" /> Direct to Office
+                                </div>
+                                <ChatInterface estimateId={selectedJob.id} sender="Crew" height="h-64" />
                             </div>
                         </div>
                     </div>

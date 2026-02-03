@@ -1,9 +1,9 @@
 
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
-import { 
-  CalculatorState, 
-  UserSession, 
-  CalculationMode, 
+import {
+  CalculatorState,
+  UserSession,
+  CalculationMode,
   FoamType,
   EstimateRecord
 } from '../types';
@@ -14,18 +14,18 @@ export const DEFAULT_STATE: CalculatorState = {
   length: 40,
   width: 30,
   wallHeight: 10,
-  roofPitch: '4/12', 
+  roofPitch: '4/12',
   includeGables: true,
   isMetalSurface: false,
   wallSettings: {
-    type: FoamType.CLOSED_CELL, 
-    thickness: 1.0, 
-    wastePercentage: 5, 
+    type: FoamType.CLOSED_CELL,
+    thickness: 1.0,
+    wastePercentage: 5,
   },
   roofSettings: {
-    type: FoamType.OPEN_CELL, 
-    thickness: 4.0, 
-    wastePercentage: 5, 
+    type: FoamType.OPEN_CELL,
+    thickness: 4.0,
+    wastePercentage: 5,
   },
   yields: {
     openCell: 16000,
@@ -37,18 +37,18 @@ export const DEFAULT_STATE: CalculatorState = {
   costs: {
     openCell: 2000,
     closedCell: 2600,
-    laborRate: 85, 
+    laborRate: 85,
   },
   warehouse: {
     openCellSets: 0,
     closedCellSets: 0,
     items: []
   },
-  equipment: [], 
+  equipment: [],
   showPricing: true,
   additionalAreas: [],
   inventory: [],
-  jobEquipment: [], 
+  jobEquipment: [],
   companyProfile: {
     companyName: '',
     addressLine1: '',
@@ -60,7 +60,7 @@ export const DEFAULT_STATE: CalculatorState = {
     email: '',
     website: '',
     logoUrl: '',
-    crewAccessPin: '' 
+    crewAccessPin: ''
   },
   customers: [],
   customerProfile: {
@@ -92,8 +92,9 @@ export const DEFAULT_STATE: CalculatorState = {
   savedEstimates: [],
   purchaseOrders: [],
   materialLogs: [],
-  
+
   // NEW: Initial State
+  messages: [],
   lifetimeUsage: {
     openCell: 0,
     closedCell: 0
@@ -112,12 +113,13 @@ type ViewType = 'calculator' | 'settings' | 'profile' | 'warehouse' | 'estimate'
 interface UIState {
   view: ViewType;
   isLoading: boolean;
-  isInitialized: boolean; 
+  isInitialized: boolean;
   syncStatus: 'idle' | 'syncing' | 'error' | 'success' | 'pending';
   notification: { type: 'success' | 'error', message: string } | null;
   viewingCustomerId: string | null;
   editingEstimateId: string | null;
   hasTrialAccess: boolean;
+  lastHeartbeat?: string; // NEW
 }
 
 interface ContextState {
@@ -126,7 +128,7 @@ interface ContextState {
   ui: UIState;
 }
 
-type Action = 
+type Action =
   | { type: 'SET_SESSION'; payload: UserSession | null }
   | { type: 'SET_TRIAL_ACCESS'; payload: boolean }
   | { type: 'LOAD_DATA'; payload: Partial<CalculatorState> }
@@ -141,7 +143,8 @@ type Action =
   | { type: 'SET_VIEWING_CUSTOMER'; payload: string | null }
   | { type: 'UPDATE_SAVED_ESTIMATE'; payload: EstimateRecord }
   | { type: 'RESET_CALCULATOR' }
-  | { type: 'LOGOUT' };
+  | { type: 'LOGOUT' }
+  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[] } }; // NEW
 
 // --- REDUCER ---
 const initialState: ContextState = {
@@ -170,15 +173,15 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
     case 'UPDATE_DATA':
       return { ...state, appData: { ...state.appData, ...action.payload } };
     case 'UPDATE_NESTED_DATA':
-      return { 
-        ...state, 
-        appData: { 
-          ...state.appData, 
-          [action.category]: { 
-            ...(state.appData[action.category] as object), 
-            [action.field]: action.value 
-          } 
-        } 
+      return {
+        ...state,
+        appData: {
+          ...state.appData,
+          [action.category]: {
+            ...(state.appData[action.category] as object),
+            [action.field]: action.value
+          }
+        }
       };
     case 'SET_VIEW':
       return { ...state, ui: { ...state.ui, view: action.payload } };
@@ -199,10 +202,38 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
         ...state,
         appData: {
           ...state.appData,
-          savedEstimates: state.appData.savedEstimates.map(e => 
+          savedEstimates: state.appData.savedEstimates.map(e =>
             e.id === action.payload.id ? action.payload : e
           )
         }
+      };
+    case 'RFE_HEARTBEAT_UPDATE':
+      // Merge Job Updates
+      let updatedEstimates = [...state.appData.savedEstimates];
+      if (action.payload.jobs && action.payload.jobs.length > 0) {
+        const updateMap = new Map(action.payload.jobs.map(j => [j.id, j]));
+        updatedEstimates = updatedEstimates.map(e => {
+          const update = updateMap.get(e.id);
+          return update ? { ...e, ...update } : e;
+        });
+      }
+
+      // Merge Messages (De-duping)
+      let updatedMessages = [...state.appData.messages];
+      if (action.payload.messages && action.payload.messages.length > 0) {
+        const existingIds = new Set(updatedMessages.map(m => m.id));
+        const newMsgs = action.payload.messages.filter(m => !existingIds.has(m.id));
+        updatedMessages = [...updatedMessages, ...newMsgs];
+      }
+
+      return {
+        ...state,
+        appData: {
+          ...state.appData,
+          savedEstimates: updatedEstimates,
+          messages: updatedMessages
+        },
+        ui: { ...state.ui, lastHeartbeat: new Date().toISOString() }
       };
     case 'RESET_CALCULATOR':
       return {
@@ -213,15 +244,16 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
           mode: CalculationMode.BUILDING,
           customerProfile: { ...DEFAULT_STATE.customerProfile },
           length: 40, width: 30, wallHeight: 10,
-          roofPitch: '4/12', 
+          roofPitch: '4/12',
           isMetalSurface: false,
           wallSettings: { ...DEFAULT_STATE.wallSettings },
           roofSettings: { ...DEFAULT_STATE.roofSettings },
-          inventory: [], jobEquipment: [], jobNotes: '', scheduledDate: '', invoiceDate: '', 
+          inventory: [], jobEquipment: [], jobNotes: '', scheduledDate: '', invoiceDate: '',
           invoiceNumber: '', paymentTerms: 'Due on Receipt',
           pricingMode: 'level_pricing', sqFtRates: { wall: 0, roof: 0 },
           // Keep lifetime stats from current state, don't reset
-          lifetimeUsage: state.appData.lifetimeUsage 
+          lifetimeUsage: state.appData.lifetimeUsage,
+          messages: state.appData.messages // Keep messages? Or clear? Probably keep
         }
       };
     case 'LOGOUT':
@@ -237,8 +269,43 @@ const CalculatorContext = createContext<{
   dispatch: React.Dispatch<Action>;
 } | undefined>(undefined);
 
+import { heartbeat } from '../services/api'; // Import API
+
 export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(calculatorReducer, initialState);
+
+  // HEARTBEAT POLLER
+  const [lastPoll, setLastPoll] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    if (!state.session || !state.session.spreadsheetId || !state.ui.isInitialized) return;
+
+    const interval = setInterval(async () => {
+      try {
+        // Only poll if we are not actively syncing (doing heavy lift)
+        if (state.ui.syncStatus === 'syncing') return;
+
+        const now = Date.now();
+        if (now - lastPoll < 8000) return; // Minimum 8s gap
+        setLastPoll(now);
+
+        // Fetch updates since last successful heartbeat
+        const lastTime = state.ui.lastHeartbeat || new Date(now - 60000).toISOString(); // Default to 1m ago if fresh
+        const result = await heartbeat(state.session.spreadsheetId, lastTime);
+
+        if (result && result.status === 'success' && result.data) {
+          const { jobUpdates, messages } = result.data;
+          if ((jobUpdates && jobUpdates.length > 0) || (messages && messages.length > 0)) {
+            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages } });
+          }
+        }
+      } catch (e) {
+        console.error("Heartbeat failed", e);
+      }
+    }, 10000); // 10s Loop
+
+    return () => clearInterval(interval);
+  }, [state.session, state.ui.isInitialized, state.ui.syncStatus, state.ui.lastHeartbeat]);
 
   return (
     <CalculatorContext.Provider value={{ state, dispatch }}>
