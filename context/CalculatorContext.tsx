@@ -286,7 +286,7 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
         if (state.ui.syncStatus === 'syncing') return;
 
         const now = Date.now();
-        if (now - lastPoll < 8000) return; // Minimum 8s gap
+        if (now - lastPoll < 4000) return; // Minimum 4s gap
         setLastPoll(now);
 
         // Fetch updates since last successful heartbeat
@@ -345,7 +345,7 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
       } catch (e) {
         console.error("Heartbeat failed", e);
       }
-    }, 10000); // 10s Loop
+    }, 5000); // 5s Loop
 
     return () => clearInterval(interval);
   }, [state.session, state.ui.isInitialized, state.ui.syncStatus, state.ui.lastHeartbeat]);

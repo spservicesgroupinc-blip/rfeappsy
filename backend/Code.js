@@ -716,13 +716,19 @@ function handleHeartbeat(ss, payload) {
     const msgData = msgSheet.getDataRange().getValues();
     const newMessages = [];
 
-    for (let i = 1; i < msgData.length; i++) {
+    // Optimization: Reverse loop to find new messages quickly and BREAK once we hit old ones.
+    // This makes the heartbeat O(k) (k=new messages) instead of O(N) (N=total messages).
+    for (let i = msgData.length - 1; i >= 1; i--) {
         const ts = msgData[i][4]; // Timestamp column
         const msgTime = new Date(ts).getTime();
+
         if (msgTime > lastSync) {
             const json = msgData[i][6];
             const obj = safeParse(json);
-            if (obj) newMessages.push(obj);
+            if (obj) newMessages.unshift(obj); // Prepend to keep chronological order
+        } else {
+            // Since messages are appended chronologically, we can stop scanning once we hit an old one.
+            break;
         }
     }
 
