@@ -34,15 +34,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         if (initialFilter) setDashboardFilter(initialFilter === 'work_orders' ? 'work_orders' : initialFilter === 'invoices' ? 'invoices' : 'all');
     }, [initialFilter]);
 
-    // Auto-Refresh for Live Status (Every 60s)
-    useEffect(() => {
-        const interval = setInterval(() => {
-            console.log("Auto-refreshing admin dashboard...");
-            onSync();
-        }, 60000); // 60 seconds
-        return () => clearInterval(interval);
-    }, [onSync]);
-
     const dashboardStats = useMemo(() => {
         if (!state.savedEstimates) return { totalValue: 0, reviewNeeded: 0 };
         return state.savedEstimates.reduce((acc, est) => {
@@ -323,15 +314,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     {/* Dynamic Status Badges */}
-                                                    {est.liveStatus === 'Active' && est.executionStatus === 'In Progress' && (
-                                                        <span className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit animate-pulse">
-                                                            <span className="relative flex h-2 w-2 mr-1">
-                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                                                            </span>
-                                                            LIVE CREW
-                                                        </span>
-                                                    )}
                                                     {est.status === 'Work Order' && est.executionStatus === 'Completed' ? (
                                                         <span className="flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit">
                                                             <CheckCircle2 className="w-3 h-3" /> Review Needed

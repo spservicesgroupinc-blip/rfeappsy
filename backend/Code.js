@@ -79,7 +79,6 @@ function doPost(e) {
                 case 'SAVE_PDF': result = handleSavePdf(userSS, payload); break;
                 case 'UPLOAD_IMAGE': result = handleUploadImage(userSS, payload); break;
                 case 'CREATE_WORK_ORDER': result = handleCreateWorkOrder(userSS, payload); break;
-                case 'UPDATE_JOB_STATUS': result = handleUpdateJobStatus(userSS, payload); break;
                 default: throw new Error(`Unknown Action: ${action}`);
             }
         }
@@ -416,28 +415,6 @@ function handleCreateWorkOrder(ss, p) {
         infoSheet.autoResizeColumns(1, 3);
     } catch (err) { console.error("Error populating work order sheet: " + err.toString()); }
     return { url: newSheet.getUrl() };
-}
-
-function handleUpdateJobStatus(ss, payload) {
-    const { estimateId, status } = payload;
-    const sheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
-    const finder = sheet.getRange("A:A").createTextFinder(estimateId).matchEntireCell(true).findNext();
-
-    if (finder) {
-        const row = finder.getRow();
-        const jsonCell = sheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE);
-        const est = safeParse(jsonCell.getValue());
-
-        if (est) {
-            est.liveStatus = status; // 'Active' or 'Paused'
-            if (!est.actuals) est.actuals = {};
-            est.actuals.lastActiveAt = new Date().toISOString();
-
-            jsonCell.setValue(JSON.stringify(est));
-            return { success: true, status: status };
-        }
-    }
-    return { success: false, message: 'Estimate not found' };
 }
 
 // Updated handleCompleteJob with Lifetime Stats

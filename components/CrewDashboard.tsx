@@ -7,7 +7,7 @@ import {
     MessageSquare, History
 } from 'lucide-react';
 import { CalculatorState, EstimateRecord } from '../types';
-import { logCrewTime, completeJob, updateJobStatus } from '../services/api';
+import { logCrewTime, completeJob } from '../services/api';
 
 interface CrewDashboardProps {
     state: CalculatorState;
@@ -101,17 +101,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
         setJobStartTime(now);
         setIsTimerRunning(true);
         localStorage.setItem('foamPro_crewStartTime', now);
-        if (selectedJobId) {
-            localStorage.setItem('foamPro_crewActiveJob', selectedJobId);
-            // Sync Active Status
-            try {
-                const s = localStorage.getItem('foamProSession');
-                if (s) {
-                    const session = JSON.parse(s);
-                    updateJobStatus(selectedJobId, 'Active', session.spreadsheetId);
-                }
-            } catch (e) { console.error("Error setting active status", e); }
-        }
+        localStorage.setItem('foamPro_crewStartTime', now);
+        if (selectedJobId) localStorage.setItem('foamPro_crewActiveJob', selectedJobId);
     };
 
     const handleStopTimer = async (isCompletion: boolean) => {
@@ -143,17 +134,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
             localStorage.removeItem('foamPro_crewStartTime');
             localStorage.removeItem('foamPro_crewActiveJob');
 
-            // Sync Paused Status
-            try {
-                const s = localStorage.getItem('foamProSession');
-                if (s && selectedJobId) {
-                    const session = JSON.parse(s);
-                    // If completing, we don't necessarily need to set to paused as the job will be completed
-                    if (!isCompletion) {
-                        updateJobStatus(selectedJobId, 'Paused', session.spreadsheetId);
-                    }
-                }
-            } catch (e) { console.error("Error setting paused status", e); }
+            localStorage.removeItem('foamPro_crewStartTime');
+            localStorage.removeItem('foamPro_crewActiveJob');
 
             if (isCompletion) {
                 const estLabor = selectedJob.expenses?.manHours || 0;
