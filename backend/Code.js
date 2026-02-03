@@ -79,6 +79,7 @@ function doPost(e) {
                 case 'SAVE_PDF': result = handleSavePdf(userSS, payload); break;
                 case 'UPLOAD_IMAGE': result = handleUploadImage(userSS, payload); break;
                 case 'CREATE_WORK_ORDER': result = handleCreateWorkOrder(userSS, payload); break;
+                case 'UPDATE_JOB_STATUS': result = handleUpdateJobStatus(userSS, payload); break;
                 default: throw new Error(`Unknown Action: ${action}`);
             }
         }
@@ -220,7 +221,7 @@ function handleSyncDown(ss) {
     }
     const foamCounts = settings['warehouse_counts'] || settings['warehouse'] || { openCellSets: 0, closedCellSets: 0 };
     const lifetimeUsage = settings['lifetime_usage'] || { openCell: 0, closedCell: 0 };
-    
+
     const inventoryItems = getSheetData(CONSTANTS.TAB_INVENTORY, CONSTANTS.COL_JSON_INVENTORY);
     const equipmentItems = getSheetData(CONSTANTS.TAB_EQUIPMENT, CONSTANTS.COL_JSON_EQUIPMENT);
     const assembledWarehouse = { openCellSets: foamCounts.openCellSets || 0, closedCellSets: foamCounts.closedCellSets || 0, items: inventoryItems || [] };
@@ -239,7 +240,7 @@ function handleSyncUp(ss, payload) {
     const { state } = payload;
     reconcileCompletedJobs(ss, state);
     setupUserSheetSchema(ss, null);
-    
+
     // Save Settings
     const settingsKeys = ['companyProfile', 'yields', 'costs', 'expenses', 'jobNotes', 'purchaseOrders', 'sqFtRates', 'pricingMode', 'lifetimeUsage'];
     const sSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
@@ -247,7 +248,7 @@ function handleSyncUp(ss, payload) {
     const settingsMap = new Map();
     existingData.forEach(r => settingsMap.set(r[0], r[1]));
     settingsKeys.forEach(key => { if (state[key] !== undefined) settingsMap.set(key, JSON.stringify(state[key])); });
-    
+
     if (state.warehouse) {
         settingsMap.set('warehouse_counts', JSON.stringify({ openCellSets: state.warehouse.openCellSets, closedCellSets: state.warehouse.closedCellSets }));
         if (state.warehouse.items && Array.isArray(state.warehouse.items)) {
@@ -263,11 +264,11 @@ function handleSyncUp(ss, payload) {
         const eRows = state.equipment.map(e => [e.id, e.name, e.status, JSON.stringify(e)]);
         if (eRows.length > 0) eSheet.getRange(2, 1, eRows.length, eRows[0].length).setValues(eRows);
     }
-    
+
     const outSettings = Array.from(settingsMap.entries()).filter(k => k[0] !== 'Config_Key');
     if (sSheet.getLastRow() > 1) sSheet.getRange(2, 1, sSheet.getLastRow() - 1, 2).clearContent();
     if (outSettings.length > 0) sSheet.getRange(2, 1, outSettings.length, 2).setValues(outSettings);
-    
+
     if (state.customers && Array.isArray(state.customers) && state.customers.length > 0) {
         const cSheet = ss.getSheetByName(CONSTANTS.TAB_CUSTOMERS);
         if (cSheet.getLastRow() > 1) cSheet.getRange(2, 1, cSheet.getLastRow() - 1, cSheet.getLastColumn()).clearContent();
@@ -417,6 +418,28 @@ function handleCreateWorkOrder(ss, p) {
     return { url: newSheet.getUrl() };
 }
 
+function handleUpdateJobStatus(ss, payload) {
+    const { estimateId, status } = payload;
+    const sheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
+    const finder = sheet.getRange("A:A").createTextFinder(estimateId).matchEntireCell(true).findNext();
+
+    if (finder) {
+        const row = finder.getRow();
+        const jsonCell = sheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE);
+        const est = safeParse(jsonCell.getValue());
+
+        if (est) {
+            est.liveStatus = status; // 'Active' or 'Paused'
+            if (!est.actuals) est.actuals = {};
+            est.actuals.lastActiveAt = new Date().toISOString();
+
+            jsonCell.setValue(JSON.stringify(est));
+            return { success: true, status: status };
+        }
+    }
+    return { success: false, message: 'Estimate not found' };
+}
+
 // Updated handleCompleteJob with Lifetime Stats
 function handleCompleteJob(ss, payload) {
     const { estimateId, actuals } = payload;
@@ -425,13 +448,13 @@ function handleCompleteJob(ss, payload) {
     if (!finder) throw new Error("Estimate not found");
     const row = finder.getRow();
     const est = safeParse(estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).getValue());
-    
+
     if (est.executionStatus === 'Completed' && est.inventoryProcessed) { return { success: true, message: "Already completed" }; }
 
     // 1. UPDATE WAREHOUSE & LIFETIME COUNTS (Settings DB)
     const setSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
     const setRows = setSheet.getDataRange().getValues();
-    
+
     let countRow = -1;
     let counts = { openCellSets: 0, closedCellSets: 0 };
     let lifeRow = -1;
@@ -461,7 +484,7 @@ function handleCompleteJob(ss, payload) {
     // Increment Lifetime
     lifeStats.openCell = (lifeStats.openCell || 0) + ocUsed;
     lifeStats.closedCell = (lifeStats.closedCell || 0) + ccUsed;
-    
+
     if (lifeRow !== -1) {
         setSheet.getRange(lifeRow, 2).setValue(JSON.stringify(lifeStats));
     } else {
@@ -533,7 +556,7 @@ function handleCompleteJob(ss, payload) {
     // 5. UPDATE ESTIMATE RECORD
     est.executionStatus = 'Completed';
     est.actuals = actuals;
-    est.inventoryProcessed = true; 
+    est.inventoryProcessed = true;
     est.lastModified = new Date().toISOString();
     estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(est));
     SpreadsheetApp.flush();

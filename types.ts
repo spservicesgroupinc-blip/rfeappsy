@@ -140,13 +140,13 @@ export interface CalculationResults {
   totalWallArea: number;
   baseRoofArea: number;
   totalRoofArea: number;
-  
+
   wallBdFt: number;
   roofBdFt: number;
-  
+
   totalOpenCellBdFt: number;
   totalClosedCellBdFt: number;
-  
+
   openCellSets: number;
   closedCellSets: number;
 
@@ -156,25 +156,26 @@ export interface CalculationResults {
 
   openCellCost: number;
   closedCellCost: number;
-  
-  inventoryCost: number; 
+
+  inventoryCost: number;
 
   laborCost: number;
   miscExpenses: number;
-  materialCost: number; 
-  totalCost: number; 
+  materialCost: number;
+  totalCost: number;
 }
 
 export interface EstimateRecord {
   id: string;
   customerId: string;
   date: string;
-  
+
   customer: CustomerProfile;
-  
+
   status: 'Draft' | 'Work Order' | 'Invoiced' | 'Paid' | 'Archived';
   executionStatus: 'Not Started' | 'In Progress' | 'Completed';
-  
+  liveStatus?: 'Active' | 'Paused';
+
   inputs: {
     mode: CalculationMode;
     length: number;
@@ -185,38 +186,38 @@ export interface EstimateRecord {
     isMetalSurface: boolean;
     additionalAreas: AdditionalArea[];
   };
-  
+
   results: CalculationResults;
-  
+
   materials: {
     openCellSets: number;
     closedCellSets: number;
     inventory: InventoryItem[];
     equipment: EquipmentItem[];
   };
-  
+
   totalValue: number;
-  
+
   wallSettings: FoamSettings;
   roofSettings: FoamSettings;
   expenses: EstimateExpenses;
-  
+
   notes?: string;
   pricingMode?: 'level_pricing' | 'sqft_pricing';
   sqFtRates?: {
     wall: number;
     roof: number;
   };
-  
+
   scheduledDate?: string;
   invoiceDate?: string;
   invoiceNumber?: string;
   paymentTerms?: string;
-  
-  estimateLines?: InvoiceLineItem[]; 
+
+  estimateLines?: InvoiceLineItem[];
   invoiceLines?: InvoiceLineItem[];
   workOrderLines?: InvoiceLineItem[];
-  
+
   actuals?: {
     openCellSets: number;
     closedCellSets: number;
@@ -229,7 +230,7 @@ export interface EstimateRecord {
     completionDate?: string;
     lastStartedAt?: string;
   };
-  
+
   financials?: {
     revenue: number;
     totalCOGS: number;
@@ -240,7 +241,7 @@ export interface EstimateRecord {
     netProfit: number;
     margin: number;
   };
-  
+
   workOrderSheetUrl?: string;
   pdfLink?: string;
   sitePhotos?: string[];
@@ -255,7 +256,7 @@ export interface CalculatorState {
   wallHeight: number;
   roofPitch: string;
   includeGables: boolean;
-  isMetalSurface: boolean; 
+  isMetalSurface: boolean;
   wallSettings: FoamSettings;
   roofSettings: FoamSettings;
   yields: {
@@ -273,18 +274,18 @@ export interface CalculatorState {
   warehouse: {
     openCellSets: number;
     closedCellSets: number;
-    items: WarehouseItem[]; 
+    items: WarehouseItem[];
   };
-  equipment: EquipmentItem[]; 
+  equipment: EquipmentItem[];
   showPricing: boolean;
   additionalAreas: AdditionalArea[];
-  inventory: InventoryItem[]; 
-  jobEquipment: EquipmentItem[]; 
+  inventory: InventoryItem[];
+  jobEquipment: EquipmentItem[];
   companyProfile: CompanyProfile;
-  
-  customers: CustomerProfile[]; 
-  customerProfile: CustomerProfile; 
-  
+
+  customers: CustomerProfile[];
+  customerProfile: CustomerProfile;
+
   pricingMode: 'level_pricing' | 'sqft_pricing';
   sqFtRates: {
     wall: number;
@@ -294,8 +295,8 @@ export interface CalculatorState {
   expenses: EstimateExpenses;
   savedEstimates: EstimateRecord[];
   purchaseOrders?: PurchaseOrder[];
-  materialLogs?: MaterialUsageLogEntry[]; 
-  
+  materialLogs?: MaterialUsageLogEntry[];
+
   lifetimeUsage: {
     openCell: number;
     closedCell: number;
@@ -304,7 +305,7 @@ export interface CalculatorState {
   jobNotes?: string;
   scheduledDate?: string;
   invoiceDate?: string;
-  invoiceNumber?: string; 
+  invoiceNumber?: string;
   paymentTerms?: string;
 }
 
@@ -314,5 +315,5 @@ export interface UserSession {
   spreadsheetId: string;
   folderId?: string;
   token?: string;
-  role: 'admin' | 'crew'; 
+  role: 'admin' | 'crew';
 }
