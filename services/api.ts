@@ -160,9 +160,9 @@ export const submitTrial = async (name: string, email: string, phone: string): P
 };
 
 /**
- * Updates the live status of a job (Active/Paused)
+ * Notifies backend that a job has started (Live Spraying)
  */
-export const updateJobStatus = async (estimateId: string, status: 'Active' | 'Paused', spreadsheetId: string): Promise<boolean> => {
-  const result = await apiRequest({ action: 'UPDATE_JOB_STATUS', payload: { estimateId, status, spreadsheetId } });
+export const startJob = async (estimateId: string, spreadsheetId: string): Promise<boolean> => {
+  const result = await apiRequest({ action: 'START_JOB', payload: { estimateId, spreadsheetId } });
   return result.status === 'success';
 };

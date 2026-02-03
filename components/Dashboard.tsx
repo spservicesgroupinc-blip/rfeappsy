@@ -318,9 +318,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                         <span className="flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit">
                                                             <CheckCircle2 className="w-3 h-3" /> Review Needed
                                                         </span>
+                                                    ) : est.status === 'Work Order' && est.executionStatus === 'In Progress' ? (
+                                                        <span className="flex items-center gap-1 bg-red-600 text-white px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit shadow-md shadow-red-200 animate-pulse">
+                                                            <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>
+                                                            LIVE SPRAYING
+                                                        </span>
                                                     ) : est.status === 'Work Order' ? (
                                                         <span className="flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit">
-                                                            <Clock className="w-3 h-3" /> In Progress
+                                                            <Clock className="w-3 h-3" /> Work Order
                                                         </span>
                                                     ) : (
                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter w-fit block ${est.status === 'Draft' ? 'bg-slate-100 text-slate-600' :

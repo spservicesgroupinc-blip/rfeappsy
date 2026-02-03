@@ -414,6 +414,77 @@ function handleCreateWorkOrder(ss, p) {
         row++; infoSheet.getRange(row, 1).setValue("JOB NOTES").setFontWeight("bold").setBackground("#E30613").setFontColor("white"); row++; infoSheet.getRange(row, 1).setValue(est.notes || "No notes.");
         infoSheet.autoResizeColumns(1, 3);
     } catch (err) { console.error("Error populating work order sheet: " + err.toString()); }
+
+    // --- INVENTORY DEDUCTION LOGIC (ADDED) ---
+    // Deduct estimated materials from inventory immediately upon Work Order creation (Sold Job).
+    try {
+        const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
+        const finder = estSheet.getRange("A:A").createTextFinder(est.id).matchEntireCell(true).findNext();
+        if (finder) {
+            const row = finder.getRow();
+
+            // Check if already deducted to prevent double deduction
+            if (!est.inventoryDeducted) {
+                const setSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
+                const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
+
+                // 1. DEDUCT FOAM SETS
+                let countRow = -1;
+                let counts = { openCellSets: 0, closedCellSets: 0 };
+                const setRows = setSheet.getDataRange().getValues();
+                for (let i = 0; i < setRows.length; i++) {
+                    if (setRows[i][0] === 'warehouse_counts' || setRows[i][0] === 'warehouse') {
+                        counts = safeParse(setRows[i][1]) || counts;
+                        countRow = i + 1;
+                    }
+                }
+
+                const estOc = Number(est.materials?.openCellSets) || 0;
+                const estCc = Number(est.materials?.closedCellSets) || 0;
+
+                if (countRow !== -1) {
+                    counts.openCellSets = (counts.openCellSets || 0) - estOc;
+                    counts.closedCellSets = (counts.closedCellSets || 0) - estCc;
+                    setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
+                }
+
+                // 2. DEDUCT INVENTORY ITEMS
+                const deductedItems = [];
+                if (est.materials?.inventory && Array.isArray(est.materials.inventory)) {
+                    const invData = invSheet.getDataRange().getValues();
+                    const invMap = new Map();
+                    for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+
+                    est.materials.inventory.forEach(item => {
+                        let rowIdx = invMap.get(item.id);
+                        if (rowIdx) {
+                            const currentJson = safeParse(invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).getValue());
+                            if (currentJson) {
+                                const qty = Number(item.quantity) || 0;
+                                currentJson.quantity = (currentJson.quantity || 0) - qty;
+                                invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity);
+                                invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).setValue(JSON.stringify(currentJson));
+                                deductedItems.push({ id: item.id, quantity: qty });
+                            }
+                        }
+                    });
+                }
+
+                // 3. UPDATE ESTIMATE RECORD
+                est.inventoryDeducted = true;
+                est.deductedValues = {
+                    openCellSets: estOc,
+                    closedCellSets: estCc,
+                    inventory: deductedItems
+                };
+                estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(est));
+            }
+        }
+    } catch (e) {
+        console.error("Error deducting inventory on WO creation: " + e.toString());
+        // We don't fail the whole request if inventory fails, but we log it.
+    }
+
     return { url: newSheet.getUrl() };
 }
 
@@ -448,10 +519,22 @@ function handleCompleteJob(ss, payload) {
         }
     }
 
+    // RECONCILIATION: Check if inventory was pre-deducted
+    if (est.inventoryDeducted && est.deductedValues) {
+        // ADD BACK deducted values first
+        const ded = est.deductedValues;
+
+        // Add back Foam
+        if (countRow !== -1) {
+            counts.openCellSets = (counts.openCellSets || 0) + (Number(ded.openCellSets) || 0);
+            counts.closedCellSets = (counts.closedCellSets || 0) + (Number(ded.closedCellSets) || 0);
+        }
+    }
+
     const ocUsed = Number(actuals.openCellSets) || 0;
     const ccUsed = Number(actuals.closedCellSets) || 0;
 
-    // Deduct Warehouse
+    // Deduct Warehouse (Actuals)
     if (countRow !== -1) {
         counts.openCellSets = (counts.openCellSets || 0) - ocUsed;
         counts.closedCellSets = (counts.closedCellSets || 0) - ccUsed;
@@ -469,11 +552,35 @@ function handleCompleteJob(ss, payload) {
     }
 
     // 2. UPDATE INVENTORY ITEMS (Inventory DB)
-    if (actuals.inventory && actuals.inventory.length > 0) {
+
+    // Reconciliation for Items
+    if (est.inventoryDeducted && est.deductedValues?.inventory) {
         const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
         const invData = invSheet.getDataRange().getValues();
         const invMap = new Map();
         for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+
+        // Add back deducted items
+        est.deductedValues.inventory.forEach(dedItem => {
+            let rowIdx = invMap.get(dedItem.id);
+            if (rowIdx) {
+                const currentJson = safeParse(invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).getValue());
+                if (currentJson) {
+                    currentJson.quantity = (currentJson.quantity || 0) + (Number(dedItem.quantity) || 0);
+                    invSheet.getRange(rowIdx, 3).setValue(currentJson.quantity);
+                    invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY).setValue(JSON.stringify(currentJson));
+                }
+            }
+        });
+    }
+
+    if (actuals.inventory && actuals.inventory.length > 0) {
+        const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
+        // Refresh Map just in case
+        const invData = invSheet.getDataRange().getValues();
+        const invMap = new Map();
+        for (let i = 1; i < invData.length; i++) { invMap.set(invData[i][0], i + 1); }
+
         actuals.inventory.forEach(actItem => {
             let rowIdx = invMap.get(actItem.id);
             if (rowIdx) {
