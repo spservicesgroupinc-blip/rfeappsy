@@ -15,18 +15,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ estimateId, sender
     const [isSending, setIsSending] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // Filter messages for this job
-    const jobMessages = state.appData.messages
-        ? state.appData.messages.filter(m => m.estimateId === estimateId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-        : [];
+    // Memorize message list to prevent re-renders on parent updates (e.g. Timer ticks)
+    const jobMessages = React.useMemo(() => {
+        return state.appData.messages
+            ? state.appData.messages.filter(m => m.estimateId === estimateId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+            : [];
+    }, [state.appData.messages, estimateId]);
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const scrollToBottom = (smooth = true) => {
+        messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     };
 
+    // Only scroll on MOUNT or when message COUNT increases (new message arrived)
     useEffect(() => {
         scrollToBottom();
-    }, [jobMessages]);
+    }, [jobMessages.length]);
 
     const handleSend = async () => {
         if (!inputText.trim() || !state.session?.spreadsheetId) return;
@@ -61,7 +64,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ estimateId, sender
     };
 
     return (
-        <div className={`flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner ${height}`}>
+        <div className={`flex flex-col bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner ${height} relative isolate`}>
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {jobMessages.length === 0 ? (

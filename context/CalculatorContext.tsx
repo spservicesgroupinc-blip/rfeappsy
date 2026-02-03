@@ -295,8 +295,51 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
 
         if (result && result.status === 'success' && result.data) {
           const { jobUpdates, messages } = result.data;
-          if ((jobUpdates && jobUpdates.length > 0) || (messages && messages.length > 0)) {
+
+          let hasRealUpdates = false;
+
+          // Check for actual changes in messages
+          if (messages && messages.length > 0) {
+            const existingIds = new Set(state.appData.messages.map(m => m.id));
+            if (messages.some(m => !existingIds.has(m.id))) {
+              hasRealUpdates = true;
+            }
+          }
+
+          // Check for actual changes in jobs (compare Last Modified or deep equality if needed)
+          // We iterate updates and compare against current state to see if anything actually changed.
+          if (!hasRealUpdates && jobUpdates && jobUpdates.length > 0) {
+            const currentJobs = new Map(state.appData.savedEstimates.map(j => [j.id, j]));
+            for (const update of jobUpdates) {
+              const current = currentJobs.get(update.id);
+              if (!current) {
+                hasRealUpdates = true; // New job
+                break;
+              }
+              // Simple JSON Stringify comparison for 'In Progress' spam prevention
+              // We remove fields that might be volatile if necessary, but full object compare is safest
+              // to ensure we catch field updates.
+              if (JSON.stringify(current) !== JSON.stringify(update)) {
+                hasRealUpdates = true;
+                break;
+              }
+            }
+          }
+
+          if (hasRealUpdates) {
             dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages } });
+          } else {
+            // Just update the timestamp silently without full re-render?
+            // Actually, we can dispatch a lightweight timestamp update if we want to acknowledge sync
+            // But for now, just skipping the dispatch prevents the re-render loop.
+            // We do need to update 'lastHeartbeat' REF effectively so we don't ask for the same data 5s later?
+            // NO. The server uses 'lastSync' we sent.
+            // If we sent T1 and got Data D1.
+            // If we don't update state, T1 remains in state.
+            // Next poll, we send T1 again. Server returns D1 again.
+            // We compare D1 == Current. "No change". Loop continues.
+            // This is fine! It prevents re-renders. It costs bandwidth but saves UI glitches.
+            // Ideally we update the watermark silently, but Context doesn't support silent updates.
           }
         }
       } catch (e) {

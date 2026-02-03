@@ -469,7 +469,7 @@ function handleCreateWorkOrder(ss, p) {
 
                     // Populate deductedItems for record keeping
                     est.materials.inventory.forEach(item => {
-                        deductedItems.push({ id: item.id, quantity: item.quantity });
+                        deductedItems.push({ id: item.id, quantity: item.quantity, name: item.name });
                     });
                 }
 
@@ -757,18 +757,27 @@ function updateInventoryWithLog(ss, itemsToDeduct, isAddBack, jobId, customerNam
     const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
     const logSheet = ss.getSheetByName(CONSTANTS.TAB_LOGS);
     const data = invSheet.getDataRange().getValues(); // Refresh data
+    // Map ID (Col A) to Row Index (1-based) AND Name (Col B) to Row Index
     const itemMap = new Map(); // ID -> Row Index
+    const nameMap = new Map(); // Name -> Row Index
 
-    // Map ID (Col A) to Row Index (1-based)
     for (let i = 1; i < data.length; i++) {
         itemMap.set(String(data[i][0]).trim(), i + 1);
+        if (data[i][1]) {
+            nameMap.set(String(data[i][1]).trim().toLowerCase(), i + 1);
+        }
     }
 
     itemsToDeduct.forEach(item => {
         const itemId = String(item.id).trim();
-        const rowIdx = itemMap.get(itemId);
-        const qty = Number(item.quantity) || 0;
+        let rowIdx = itemMap.get(itemId);
         const itemName = item.name || "Unknown Item";
+
+        if (!rowIdx && itemName !== "Unknown Item") {
+            rowIdx = nameMap.get(itemName.trim().toLowerCase());
+        }
+
+        const qty = Number(item.quantity) || 0;
 
         if (rowIdx && qty > 0) {
             const jsonCell = invSheet.getRange(rowIdx, CONSTANTS.COL_JSON_INVENTORY);

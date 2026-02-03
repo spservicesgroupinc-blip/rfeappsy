@@ -463,7 +463,7 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
 
                 {/* Completion Modal */}
                 {showCompletionModal && (
-                    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
                         <div className="bg-white rounded-3xl w-full max-w-md p-8 shadow-2xl animate-in fade-in zoom-in duration-300 max-h-[90vh] overflow-y-auto">
                             <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight mb-6">Complete Job</h3>
 
@@ -540,6 +540,39 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
                                     />
                                 </div>
 
+                                {/* GENERAL INVENTORY USAGE */}
+                                {actuals.inventory && actuals.inventory.length > 0 && (
+                                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest border-b border-slate-200 pb-2 flex items-center gap-2">
+                                            <Package className="w-3 h-3" /> Material Usage
+                                        </h4>
+                                        <div className="space-y-4">
+                                            {actuals.inventory.map((item, index) => (
+                                                <div key={index}>
+                                                    <label className="text-xs font-bold text-slate-500 flex justify-between mb-1">
+                                                        <span>{item.name}</span>
+                                                        <span>Est: {item.quantity} {item.unit}</span>
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            value={item.quantity}
+                                                            onChange={(e) => {
+                                                                const newInv = [...actuals.inventory];
+                                                                newInv[index] = { ...newInv[index], quantity: parseFloat(e.target.value) || 0 };
+                                                                setActuals({ ...actuals, inventory: newInv });
+                                                            }}
+                                                            className="flex-1 p-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-brand outline-none"
+                                                        />
+                                                        <span className="text-xs font-bold text-slate-400 w-12">{item.unit}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="flex gap-3 pt-4">
                                     <button onClick={() => setShowCompletionModal(false)} disabled={isCompleting} className="flex-1 p-4 border-2 border-slate-100 rounded-2xl font-black uppercase text-xs tracking-widest text-slate-400 hover:bg-slate-50">Cancel</button>
                                     <button onClick={handleCompleteJobSubmit} disabled={isCompleting} className="flex-1 p-4 bg-brand text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-brand-hover shadow-lg shadow-red-200 flex items-center justify-center gap-2">
@@ -548,122 +581,121 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
                                 </div>
                             </div>
                         </div>
-                    </div>
                 )}
-            </div>
-        );
+                    </div>
+                );
     }
 
-    // --- JOB LIST VIEW ---
-    return (
-        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
+                // --- JOB LIST VIEW ---
+                return (
+                <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-20">
 
-            {/* Floating Install Icon for Crew */}
-            {installPrompt && (
-                <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500">
-                    <button
-                        onClick={onInstall}
-                        className="group flex items-center gap-3 bg-slate-900 text-white pl-4 pr-6 py-4 rounded-full shadow-2xl border-2 border-slate-700 hover:bg-brand hover:border-brand transition-all hover:scale-105 active:scale-95"
-                        title="Install Desktop App"
-                    >
-                        <div className="bg-white/10 p-1.5 rounded-full group-hover:bg-white/20 transition-colors">
-                            <Download className="w-5 h-5 animate-pulse" />
-                        </div>
-                        <div className="flex flex-col items-start">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-white/80 transition-colors leading-none mb-0.5">Desktop App</span>
-                            <span className="font-bold text-sm leading-none">Install Now</span>
-                        </div>
-                    </button>
-                </div>
-            )}
-
-            {/* Header */}
-            <header className="bg-slate-900 text-white p-6 pb-12 rounded-b-[2.5rem] shadow-2xl relative overflow-hidden">
-                <div className="relative z-10 flex justify-between items-start mb-6">
-                    <RFESmallLogo />
-                    <div className="flex gap-2">
-                        <div className="text-right">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</div>
-                            <div className="text-xs font-bold text-emerald-400 flex items-center justify-end gap-1">
-                                {syncStatus === 'syncing' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>}
-                                {syncStatus === 'syncing' ? 'Syncing...' : 'Live'}
-                            </div>
-                        </div>
-                        {installPrompt && (
-                            <button onClick={onInstall} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/40 transition-colors" title="Install App">
-                                <Download className="w-5 h-5" />
+                    {/* Floating Install Icon for Crew */}
+                    {installPrompt && (
+                        <div className="fixed bottom-6 right-6 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500">
+                            <button
+                                onClick={onInstall}
+                                className="group flex items-center gap-3 bg-slate-900 text-white pl-4 pr-6 py-4 rounded-full shadow-2xl border-2 border-slate-700 hover:bg-brand hover:border-brand transition-all hover:scale-105 active:scale-95"
+                                title="Install Desktop App"
+                            >
+                                <div className="bg-white/10 p-1.5 rounded-full group-hover:bg-white/20 transition-colors">
+                                    <Download className="w-5 h-5 animate-pulse" />
+                                </div>
+                                <div className="flex flex-col items-start">
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-white/80 transition-colors leading-none mb-0.5">Desktop App</span>
+                                    <span className="font-bold text-sm leading-none">Install Now</span>
+                                </div>
                             </button>
-                        )}
-                        <button onClick={onLogout} className="p-2 bg-slate-800 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
-                            <LogOut className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-                <div className="relative z-10 flex justify-between items-end">
-                    <div>
-                        <h1 className="text-2xl font-black mb-1">Crew Dashboard</h1>
-                        <p className="text-slate-400 text-sm font-medium">Select a Work Order to begin.</p>
-                    </div>
-                    <button
-                        onClick={() => setShowHistory(!showHistory)}
-                        className={`text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-2 ${showHistory ? 'bg-white text-slate-900 border-white' : 'bg-transparent text-slate-400 border-slate-700 hover:border-slate-500'}`}
-                    >
-                        <History className="w-4 h-4" /> {showHistory ? 'Hide History' : 'History'}
-                    </button>
-                </div>
-                {/* Background Pattern */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-brand rounded-full filter blur-[80px] opacity-20 transform translate-x-1/3 -translate-y-1/3"></div>
-            </header>
-
-            {/* List */}
-            <div className="px-4 -mt-8 relative z-20 space-y-4 max-w-2xl mx-auto">
-                {displayedJobs.length === 0 ? (
-                    <div className="bg-white rounded-3xl p-10 text-center shadow-lg border border-slate-100">
-                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-                            <CheckCircle2 className="w-8 h-8" />
                         </div>
-                        <h3 className="text-lg font-black text-slate-900 mb-2">{showHistory ? 'No Completed Jobs' : 'All Caught Up!'}</h3>
-                        <p className="text-slate-500 text-sm">{showHistory ? 'Completed work orders will appear here.' : 'No pending work orders assigned.'}</p>
-                        {!showHistory && (
-                            <button onClick={() => onSync()} className="mt-6 text-brand font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:underline">
-                                <RefreshCw className="w-4 h-4" /> Refresh List
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    displayedJobs.map(job => (
-                        <button
-                            key={job.id}
-                            onClick={() => setSelectedJobId(job.id)}
-                            className={`w-full bg-white p-6 rounded-3xl shadow-sm border border-slate-200 text-left hover:scale-[1.02] transition-transform active:scale-95 group relative overflow-hidden ${job.executionStatus === 'Completed' ? 'opacity-80 hover:opacity-100' : ''}`}
-                        >
-                            <div className={`absolute top-0 left-0 w-1 h-full transition-colors ${job.executionStatus === 'Completed' ? 'bg-emerald-500' : 'bg-slate-200 group-hover:bg-brand'}`}></div>
-                            <div className="flex justify-between items-start mb-4 pl-4">
-                                <div>
-                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
-                                        Work Order {job.executionStatus === 'Completed' && <span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded">DONE</span>}
+                    )}
+
+                    {/* Header */}
+                    <header className="bg-slate-900 text-white p-6 pb-12 rounded-b-[2.5rem] shadow-2xl relative overflow-hidden">
+                        <div className="relative z-10 flex justify-between items-start mb-6">
+                            <RFESmallLogo />
+                            <div className="flex gap-2">
+                                <div className="text-right">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</div>
+                                    <div className="text-xs font-bold text-emerald-400 flex items-center justify-end gap-1">
+                                        {syncStatus === 'syncing' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>}
+                                        {syncStatus === 'syncing' ? 'Syncing...' : 'Live'}
                                     </div>
-                                    <div className="text-xl font-black text-slate-900">#{job.id.substring(0, 8).toUpperCase()}</div>
                                 </div>
-                                <div className="bg-slate-50 p-2 rounded-xl text-slate-400 group-hover:text-brand transition-colors">
-                                    <ArrowRight className="w-5 h-5" />
-                                </div>
+                                {installPrompt && (
+                                    <button onClick={onInstall} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/40 transition-colors" title="Install App">
+                                        <Download className="w-5 h-5" />
+                                    </button>
+                                )}
+                                <button onClick={onLogout} className="p-2 bg-slate-800 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+                                    <LogOut className="w-5 h-5" />
+                                </button>
                             </div>
-                            <div className="pl-4 space-y-2">
-                                <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                                    <User className="w-4 h-4 text-slate-400" /> {job.customer.name}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                                    <MapPin className="w-4 h-4 text-slate-400" /> {job.customer.city}, {job.customer.state}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-                                    <Calendar className="w-4 h-4 text-slate-400" /> {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Unscheduled"}
-                                </div>
+                        </div>
+                        <div className="relative z-10 flex justify-between items-end">
+                            <div>
+                                <h1 className="text-2xl font-black mb-1">Crew Dashboard</h1>
+                                <p className="text-slate-400 text-sm font-medium">Select a Work Order to begin.</p>
                             </div>
-                        </button>
-                    ))
-                )}
-            </div>
-        </div>
-    );
+                            <button
+                                onClick={() => setShowHistory(!showHistory)}
+                                className={`text-xs font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-2 ${showHistory ? 'bg-white text-slate-900 border-white' : 'bg-transparent text-slate-400 border-slate-700 hover:border-slate-500'}`}
+                            >
+                                <History className="w-4 h-4" /> {showHistory ? 'Hide History' : 'History'}
+                            </button>
+                        </div>
+                        {/* Background Pattern */}
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-brand rounded-full filter blur-[80px] opacity-20 transform translate-x-1/3 -translate-y-1/3"></div>
+                    </header>
+
+                    {/* List */}
+                    <div className="px-4 -mt-8 relative z-20 space-y-4 max-w-2xl mx-auto">
+                        {displayedJobs.length === 0 ? (
+                            <div className="bg-white rounded-3xl p-10 text-center shadow-lg border border-slate-100">
+                                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+                                    <CheckCircle2 className="w-8 h-8" />
+                                </div>
+                                <h3 className="text-lg font-black text-slate-900 mb-2">{showHistory ? 'No Completed Jobs' : 'All Caught Up!'}</h3>
+                                <p className="text-slate-500 text-sm">{showHistory ? 'Completed work orders will appear here.' : 'No pending work orders assigned.'}</p>
+                                {!showHistory && (
+                                    <button onClick={() => onSync()} className="mt-6 text-brand font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:underline">
+                                        <RefreshCw className="w-4 h-4" /> Refresh List
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            displayedJobs.map(job => (
+                                <button
+                                    key={job.id}
+                                    onClick={() => setSelectedJobId(job.id)}
+                                    className={`w-full bg-white p-6 rounded-3xl shadow-sm border border-slate-200 text-left hover:scale-[1.02] transition-transform active:scale-95 group relative overflow-hidden ${job.executionStatus === 'Completed' ? 'opacity-80 hover:opacity-100' : ''}`}
+                                >
+                                    <div className={`absolute top-0 left-0 w-1 h-full transition-colors ${job.executionStatus === 'Completed' ? 'bg-emerald-500' : 'bg-slate-200 group-hover:bg-brand'}`}></div>
+                                    <div className="flex justify-between items-start mb-4 pl-4">
+                                        <div>
+                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                                Work Order {job.executionStatus === 'Completed' && <span className="bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded">DONE</span>}
+                                            </div>
+                                            <div className="text-xl font-black text-slate-900">#{job.id.substring(0, 8).toUpperCase()}</div>
+                                        </div>
+                                        <div className="bg-slate-50 p-2 rounded-xl text-slate-400 group-hover:text-brand transition-colors">
+                                            <ArrowRight className="w-5 h-5" />
+                                        </div>
+                                    </div>
+                                    <div className="pl-4 space-y-2">
+                                        <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                                            <User className="w-4 h-4 text-slate-400" /> {job.customer.name}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                                            <MapPin className="w-4 h-4 text-slate-400" /> {job.customer.city}, {job.customer.state}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                                            <Calendar className="w-4 h-4 text-slate-400" /> {job.scheduledDate ? new Date(job.scheduledDate).toLocaleDateString() : "Unscheduled"}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+                );
 };
