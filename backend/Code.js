@@ -737,16 +737,18 @@ function handleSendMessage(ss, payload) {
     const { estimateId, content, sender } = payload;
     const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
 
+    const validSender = (sender === 'Admin' || sender === 'Crew') ? sender : 'Admin'; // Default to Admin if invalid, but Crew should send 'Crew'
+
     const msg = {
         id: Utilities.getUuid(),
         estimateId,
-        sender, // 'Admin' or 'Crew'
+        sender: validSender,
         content,
         timestamp: new Date().toISOString(),
         readBy: []
     };
 
-    msgSheet.appendRow([msg.id, estimateId, sender, content, msg.timestamp, "", JSON.stringify(msg)]);
+    msgSheet.appendRow([msg.id, estimateId, validSender, content, msg.timestamp, "", JSON.stringify(msg)]);
     return { success: true, message: msg };
 }
 
