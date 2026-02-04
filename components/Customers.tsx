@@ -102,39 +102,58 @@ export const Customers: React.FC<CustomersProps> = ({
                                             est.status === 'Invoiced' ? 'bg-sky-100 text-sky-700' :
                                                 'bg-slate-100 text-slate-600'
                                             }`}>{est.status}</span> </td>
-                                        <td className="px-6 py-5 flex gap-3">
-                                            {/* Estimate PDF */}
+                                        <div className="flex flex-col gap-2">
                                             {/* Main PDF (Estimate / Work Order / Receipt) */}
                                             {est.pdfLink && (
-                                                <a href={est.pdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors" title="View Document">
-                                                    <FileText className="w-4 h-4 text-slate-600" />
-                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                                        {est.status === 'Paid' ? 'Receipt' : (est.status === 'Draft' ? 'Estimate' : 'Work Order')}
-                                                    </span>
+                                                <a href={est.pdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200 group">
+                                                    <div className="bg-slate-100 p-2 rounded-md group-hover:bg-brand group-hover:text-white text-slate-500 transition-colors">
+                                                        <FileText className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">
+                                                            {est.status === 'Paid' ? 'Receipt' : (est.status === 'Draft' ? 'Estimate' : 'Work Order')}
+                                                        </div>
+                                                        <div className="text-xs font-bold text-slate-700 group-hover:text-brand">View Document</div>
+                                                    </div>
                                                 </a>
                                             )}
                                             {/* Work Order Sheet */}
                                             {est.workOrderSheetUrl && (
-                                                <a href={est.workOrderSheetUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors" title="View Work Order">
-                                                    <ClipboardList className="w-4 h-4 text-amber-600" />
-                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Work Order</span>
+                                                <a href={est.workOrderSheetUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200 group">
+                                                    <div className="bg-amber-50 p-2 rounded-md group-hover:bg-amber-500 group-hover:text-white text-amber-600 transition-colors">
+                                                        <ClipboardList className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">Production</div>
+                                                        <div className="text-xs font-bold text-slate-700 group-hover:text-amber-600">Crew Log Sheet</div>
+                                                    </div>
                                                 </a>
                                             )}
                                             {/* Completion Report */}
                                             {est.completionReportLink && (
-                                                <a href={est.completionReportLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors" title="Completion Report">
-                                                    <HardHat className="w-4 h-4 text-purple-600" />
-                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Report</span>
+                                                <a href={est.completionReportLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200 group">
+                                                    <div className="bg-purple-50 p-2 rounded-md group-hover:bg-purple-500 group-hover:text-white text-purple-600 transition-colors">
+                                                        <HardHat className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">Completion</div>
+                                                        <div className="text-xs font-bold text-slate-700 group-hover:text-purple-600">Job Report</div>
+                                                    </div>
                                                 </a>
                                             )}
                                             {/* Invoice PDF */}
                                             {est.invoicePdfLink && (
-                                                <a href={est.invoicePdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors" title="View Invoice">
-                                                    <Receipt className="w-4 h-4 text-emerald-600" />
-                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Invoice</span>
+                                                <a href={est.invoicePdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-100 transition-all border border-transparent hover:border-slate-200 group">
+                                                    <div className="bg-emerald-50 p-2 rounded-md group-hover:bg-emerald-500 group-hover:text-white text-emerald-600 transition-colors">
+                                                        <Receipt className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest leading-none mb-1">Billing</div>
+                                                        <div className="text-xs font-bold text-slate-700 group-hover:text-emerald-600">View Invoice</div>
+                                                    </div>
                                                 </a>
                                             )}
-                                        </td>
+                                        </div>
                                         <td className="px-6 py-5 text-right text-brand font-black uppercase text-[10px] tracking-widest">
                                             {est.status === 'Paid' ? <CheckCircle2 className="w-5 h-5 ml-auto text-emerald-500" /> : 'Open'}
                                         </td>
