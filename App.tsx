@@ -6,12 +6,10 @@ import ReloadPrompt from './components/ReloadPrompt';
 
 function App() {
   return (
-    <div className="min-h-[100dvh] bg-slate-50 py-8">
-      <CalculatorProvider>
-        <SprayFoamCalculator />
-        <ReloadPrompt />
-      </CalculatorProvider>
-    </div>
+    <CalculatorProvider>
+      <SprayFoamCalculator />
+      <ReloadPrompt />
+    </CalculatorProvider>
   );
 }
 

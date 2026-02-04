@@ -178,7 +178,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* MOBILE MENU OVERLAY */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-md flex flex-col p-6 animate-in fade-in slide-in-from-bottom-10 duration-200">
+        <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-md flex flex-col p-6 animate-in fade-in slide-in-from-bottom-10 duration-200 touch-none overscroll-contain" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-8">
             <div className="text-white">
               <h2 className="text-2xl font-black italic tracking-tighter">MENU</h2>
