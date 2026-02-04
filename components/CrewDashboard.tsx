@@ -9,6 +9,7 @@ import {
 import { CalculatorState, EstimateRecord } from '../types';
 import { logCrewTime, completeJob, startJob } from '../services/api';
 import { ChatInterface } from './ChatInterface';
+import { useEstimates } from '../hooks/useEstimates';
 
 
 interface CrewDashboardProps {
@@ -180,6 +181,8 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
         }
     };
 
+    const { generateAndUploadPDF } = useEstimates();
+
     const handleCompleteJobSubmit = async () => {
         if (!selectedJob) return;
         setIsCompleting(true);
@@ -197,6 +200,18 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
                 completedBy: session.username || "Crew"
             };
 
+            // 1. Generate & Upload Completion Report PDF
+            // We create a temporary record with the final actuals to generate the PDF correctly
+            const recordForPdf = { ...selectedJob, actuals: finalData, executionStatus: 'Completed' } as EstimateRecord;
+            try {
+                await generateAndUploadPDF(recordForPdf, 'COMPLETION_REPORT', false);
+            } catch (pdfErr) {
+                console.error("Failed to upload completion report", pdfErr);
+                // We typically continue to complete the job even if PDF fails, or alert?
+                // For now, log and continue, as completing the job data is priority.
+            }
+
+            // 2. Sync Completion Data to Backend
             const success = await completeJob(selectedJob.id, finalData, session.spreadsheetId);
 
             if (success) {

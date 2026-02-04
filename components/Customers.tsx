@@ -104,10 +104,13 @@ export const Customers: React.FC<CustomersProps> = ({
                                             }`}>{est.status}</span> </td>
                                         <td className="px-6 py-5 flex gap-3">
                                             {/* Estimate PDF */}
+                                            {/* Main PDF (Estimate / Work Order / Receipt) */}
                                             {est.pdfLink && (
-                                                <a href={est.pdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors" title="View Estimate PDF">
+                                                <a href={est.pdfLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="group relative p-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors" title="View Document">
                                                     <FileText className="w-4 h-4 text-slate-600" />
-                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Estimate</span>
+                                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[9px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                                        {est.status === 'Paid' ? 'Receipt' : (est.status === 'Draft' ? 'Estimate' : 'Work Order')}
+                                                    </span>
                                                 </a>
                                             )}
                                             {/* Work Order Sheet */}
