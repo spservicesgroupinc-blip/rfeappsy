@@ -24,7 +24,8 @@ interface EstimateDetailProps {
     onEdit: () => void;
     onGeneratePDF: () => void;
     onSold: () => void;
-    onInvoice: () => void; // New prop for correct routing
+    onInvoice: () => void;
+    onOpenChat: () => void; // New prop
 }
 
 export const EstimateDetail: React.FC<EstimateDetailProps> = ({
@@ -34,7 +35,8 @@ export const EstimateDetail: React.FC<EstimateDetailProps> = ({
     onEdit,
     onGeneratePDF,
     onSold,
-    onInvoice
+    onInvoice,
+    onOpenChat
 }) => {
     const isPaid = record.status === 'Paid';
     const margin = results.totalCost > 0
@@ -97,12 +99,20 @@ export const EstimateDetail: React.FC<EstimateDetailProps> = ({
                 <div className="p-8">
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                        {/* Chat Interface */}
-                        <div className="md:col-span-2">
-                            <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <MessageCircle className="w-4 h-4 text-slate-400" /> Live Crew Chat
-                            </h3>
-                            <ChatInterface estimateId={record.id} sender="Admin" height="h-64" />
+                        {/* Chat Interface Navigation */}
+                        <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div>
+                                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1 flex items-center gap-2">
+                                    <MessageCircle className="w-4 h-4 text-brand" /> Live Crew Chat
+                                </h3>
+                                <p className="text-sm text-slate-500 font-medium">Communicate with the crew in real-time regarding this job.</p>
+                            </div>
+                            <button
+                                onClick={onOpenChat}
+                                className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 flex items-center gap-2"
+                            >
+                                <MessageCircle className="w-4 h-4" /> Open Chat Interface
+                            </button>
                         </div>
 
                         {/* Scope Summary */}

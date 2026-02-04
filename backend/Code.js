@@ -286,6 +286,7 @@ function handleSyncUp(ss, payload) {
         const finder = master.getRange("D:D").createTextFinder(ss.getId()).matchEntireCell(true).findNext();
         if (finder) master.getRange(finder.getRow(), 7).setValue(String(state.companyProfile.crewAccessPin));
     }
+    markSystemDirty(ss.getId());
     return { synced: true };
 }
 
@@ -345,6 +346,7 @@ function handleStartJob(ss, payload) {
             if (!est.actuals) est.actuals = {};
             est.actuals.lastStartedAt = new Date().toISOString();
             jsonCell.setValue(JSON.stringify(est));
+            markSystemDirty(ss.getId());
             return { success: true, status: 'In Progress' };
         }
     }
@@ -394,6 +396,7 @@ function handleSavePdf(ss, p) {
             } catch (e) { }
         }
     }
+    markSystemDirty(ss.getId());
     return { success: true, url: url };
 }
 function handleCreateWorkOrder(ss, p) {
@@ -488,6 +491,7 @@ function handleCreateWorkOrder(ss, p) {
         // We don't fail the whole request if inventory fails, but we log it.
     }
 
+    markSystemDirty(ss.getId());
     return { url: newSheet.getUrl() };
 }
 
@@ -628,12 +632,13 @@ function handleCompleteJob(ss, payload) {
     est.lastModified = new Date().toISOString();
     estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(est));
     SpreadsheetApp.flush();
+    markSystemDirty(ss.getId());
     return { success: true };
 }
 
 function handleSubmitTrial(p) { getMasterSpreadsheet().getSheetByName("Trial_Memberships").appendRow([p.name, p.email, p.phone, new Date()]); return { success: true }; }
 function handleLogTime(p) { const ss = SpreadsheetApp.openByUrl(p.workOrderUrl); const s = ss.getSheetByName("Daily Crew Log"); s.appendRow([new Date().toLocaleDateString(), p.user, new Date(p.startTime).toLocaleTimeString(), p.endTime ? new Date(p.endTime).toLocaleTimeString() : "", "", "", ""]); return { success: true }; }
-function handleDeleteEstimate(ss, p) { const s = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES); const f = s.getRange("A:A").createTextFinder(p.estimateId).matchEntireCell(true).findNext(); if (f) s.deleteRow(f.getRow()); return { success: true }; }
+function handleDeleteEstimate(ss, p) { const s = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES); const f = s.getRange("A:A").createTextFinder(p.estimateId).matchEntireCell(true).findNext(); if (f) s.deleteRow(f.getRow()); markSystemDirty(ss.getId()); return { success: true }; }
 function handleMarkJobPaid(ss, payload) {
     const { estimateId } = payload;
     const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
@@ -654,6 +659,7 @@ function handleMarkJobPaid(ss, payload) {
     est.financials = { revenue, chemicalCost: chemCost, laborCost: labCost, inventoryCost: invCost, miscCost: misc, totalCOGS, netProfit: revenue - totalCOGS, margin: revenue ? (revenue - totalCOGS) / revenue : 0 };
     estSheet.getRange(row, 5).setValue('Paid'); estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(est));
     ss.getSheetByName(CONSTANTS.TAB_PNL).appendRow([new Date(), est.id, est.customer?.name, est.invoiceNumber, revenue, chemCost, labCost, invCost, misc, totalCOGS, est.financials.netProfit, est.financials.margin]);
+    markSystemDirty(ss.getId());
     return { success: true, estimate: est };
 }
 function reconcileCompletedJobs(ss, incomingState) {
@@ -681,12 +687,51 @@ function reconcileCompletedJobs(ss, incomingState) {
 
 // --- NEW FEATURES ---
 
+// --- OPTIMIZATION HELPERS ---
+function markSystemDirty(ssId) {
+    try {
+        const cache = CacheService.getScriptCache();
+        // We use a global key for simplicity, or per-spreadsheet if needed. 
+        // Since this script might serve multiple tenants, we should ideally namespace by SS ID if possible, 
+        // but the current architecture seems to run one script execution context per request.
+        // However, checking the auth flow, it supports multiple companies.
+        // We will namespace by Spreadsheet ID to be safe and correct.
+        if (ssId) {
+            cache.put(`DIRTY_${ssId}`, new Date().getTime().toString(), 21600); // 6 hours
+        }
+    } catch (e) {
+        console.error("Cache Error", e);
+    }
+}
+
 function handleHeartbeat(ss, payload) {
     const { lastSyncTimestamp } = payload;
     const lastSync = lastSyncTimestamp ? new Date(lastSyncTimestamp).getTime() : 0;
+    const cache = CacheService.getScriptCache();
+    const ssId = ss.getId();
 
-    // 1. Get Job Updates
+    // 1. CACHE CHECK (Global Dirty Flag)
+    // If system hasn't changed since lastSync, return nothing immediately.
+    const lastModifiedStr = cache.get(`DIRTY_${ssId}`);
+    // Safety: If cache is empty, we assume dirty (safest default) to avoid missing updates if cache evicts.
+    // If cache exists, we compare timestamps.
+    if (lastModifiedStr) {
+        const lastModified = parseInt(lastModifiedStr);
+        if (lastModified <= lastSync) {
+            return {
+                jobUpdates: [],
+                messages: [],
+                serverTime: new Date().toISOString(),
+                cached: true
+            };
+        }
+    }
+
+    // 2. Get Job Updates
     const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
+    // Optimization: If we have many estimates, reading all is slow. 
+    // Ideally we'd optimize this too, but for < 1000 rows it's acceptable for now.
+    // Future: Add a 'ModifiedAt' column to A:A or distinct column and only read that column first.
     const estData = estSheet.getDataRange().getValues();
     const jobUpdates = [];
 
@@ -696,9 +741,7 @@ function handleHeartbeat(ss, payload) {
         if (estData[i].length <= jsonColIndex) continue;
         const json = estData[i][jsonColIndex];
         if (!json) continue;
-        const bs = estData[i][1]; // Date column? Or ID?
-        // Optimization: We parse everything for now, or could rely on ModifiedAt column if we added one. 
-        // For < 1000 jobs, parsing matches is fine.
+
         const obj = safeParse(json);
         if (obj) {
             const modTime = obj.lastModified ? new Date(obj.lastModified).getTime() : 0;
@@ -711,24 +754,32 @@ function handleHeartbeat(ss, payload) {
         }
     }
 
-    // 2. Get Messages
+    // 3. Get Messages (OPTIMIZED PARTIAL READ)
     const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
-    const msgData = msgSheet.getDataRange().getValues();
-    const newMessages = [];
 
-    // Optimization: Reverse loop to find new messages quickly and BREAK once we hit old ones.
-    // This makes the heartbeat O(k) (k=new messages) instead of O(N) (N=total messages).
-    for (let i = msgData.length - 1; i >= 1; i--) {
-        const ts = msgData[i][4]; // Timestamp column
-        const msgTime = new Date(ts).getTime();
+    // Only read the last 200 rows + header. 
+    const lastRow = msgSheet.getLastRow();
+    const startRow = Math.max(2, lastRow - 200);
+    const numRows = lastRow - startRow + 1;
 
-        if (msgTime > lastSync) {
-            const json = msgData[i][6];
-            const obj = safeParse(json);
-            if (obj) newMessages.unshift(obj); // Prepend to keep chronological order
-        } else {
-            // Since messages are appended chronologically, we can stop scanning once we hit an old one.
-            break;
+    let newMessages = [];
+
+    if (numRows > 0) {
+        const msgData = msgSheet.getRange(startRow, 1, numRows, msgSheet.getLastColumn()).getValues();
+
+        // Loop backwards from end of data
+        for (let i = msgData.length - 1; i >= 0; i--) {
+            const ts = msgData[i][4]; // Timestamp column
+            const msgTime = new Date(ts).getTime();
+
+            if (msgTime > lastSync) {
+                const json = msgData[i][6];
+                const obj = safeParse(json);
+                if (obj) newMessages.unshift(obj); // Prepend to keep chronological order
+            } else {
+                // Since messages are appended chronologically, we can stop scanning once we hit an old one.
+                break;
+            }
         }
     }
 
@@ -755,6 +806,7 @@ function handleSendMessage(ss, payload) {
     };
 
     msgSheet.appendRow([msg.id, estimateId, validSender, content, msg.timestamp, "", JSON.stringify(msg)]);
+    markSystemDirty(ss.getId());
     return { success: true, message: msg };
 }
 

@@ -19,9 +19,10 @@ interface CrewDashboardProps {
     onSync: () => Promise<void>; // This is forceRefresh (Sync Down) now passed from parent
     installPrompt: any;
     onInstall: () => void;
+    onOpenChat: (jobId: string) => void; // New prop
 }
 
-export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, syncStatus, onSync, installPrompt, onInstall }) => {
+export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, syncStatus, onSync, installPrompt, onInstall, onOpenChat }) => {
     const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
     const [showHistory, setShowHistory] = useState(false);
 
@@ -391,12 +392,21 @@ export const CrewDashboard: React.FC<CrewDashboardProps> = ({ state, onLogout, s
                                 {selectedJob.customer.city}, {selectedJob.customer.state} {selectedJob.customer.zip}
                             </div>
 
-                            {/* LIVE MESSAGING */}
-                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                                <div className="p-4 bg-slate-50 border-b border-slate-100 font-black uppercase text-[10px] tracking-widest text-slate-500 flex items-center gap-2">
-                                    <MessageSquare className="w-3 h-3" /> Direct to Office
+                            {/* Chat Button */}
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden p-6 flex flex-col items-center justify-center gap-4 text-center">
+                                <div>
+                                    <div className="bg-brand/10 p-3 rounded-full inline-block mb-2">
+                                        <MessageSquare className="w-6 h-6 text-brand" />
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Need Support?</h3>
+                                    <p className="text-sm text-slate-500 font-medium">Chat directly with the office admin regarding this job.</p>
                                 </div>
-                                <ChatInterface estimateId={selectedJob.id} sender="Crew" height="h-64" />
+                                <button
+                                    onClick={() => onOpenChat(selectedJob.id)}
+                                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 shadow-lg shadow-slate-200 transition-all active:scale-95"
+                                >
+                                    Open Job Chat
+                                </button>
                             </div>
                         </div>
                     </div>
