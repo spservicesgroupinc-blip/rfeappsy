@@ -144,7 +144,7 @@ type Action =
   | { type: 'UPDATE_SAVED_ESTIMATE'; payload: EstimateRecord }
   | { type: 'RESET_CALCULATOR' }
   | { type: 'LOGOUT' }
-  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[] } }; // NEW
+  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[], warehouse?: any } }; // NEW, Updated
 
 // --- REDUCER ---
 const initialState: ContextState = {
@@ -226,12 +226,19 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
         updatedMessages = [...updatedMessages, ...newMsgs];
       }
 
+      // Merge Warehouse (NEW)
+      let updatedWarehouse = state.appData.warehouse;
+      if (action.payload.warehouse) {
+        updatedWarehouse = action.payload.warehouse;
+      }
+
       return {
         ...state,
         appData: {
           ...state.appData,
           savedEstimates: updatedEstimates,
-          messages: updatedMessages
+          messages: updatedMessages,
+          warehouse: updatedWarehouse // Apply warehouse update
         },
         ui: { ...state.ui, lastHeartbeat: new Date().toISOString() }
       };
@@ -326,8 +333,24 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
             }
           }
 
+          // Check for warehouse updates (NEW)
+          const newWarehouse = result.data.warehouse;
+          if (newWarehouse) {
+            const currentW = state.appData.warehouse;
+            // Simple compare to avoid re-renders if backend sends same data
+            // We can check if stock counts changed
+            if (
+              newWarehouse.openCellSets !== currentW.openCellSets ||
+              newWarehouse.closedCellSets !== currentW.closedCellSets ||
+              newWarehouse.items.length !== currentW.items.length ||
+              JSON.stringify(newWarehouse.items) !== JSON.stringify(currentW.items)
+            ) {
+              hasRealUpdates = true;
+            }
+          }
+
           if (hasRealUpdates) {
-            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages } });
+            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages, warehouse: newWarehouse } });
           } else {
             // Just update the timestamp silently without full re-render?
             // Actually, we can dispatch a lightweight timestamp update if we want to acknowledge sync

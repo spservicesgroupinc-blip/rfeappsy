@@ -889,6 +889,7 @@ function handleHeartbeat(ss, payload) {
             return {
                 jobUpdates: [],
                 messages: [],
+                warehouse: null, // No updates
                 serverTime: new Date().toISOString(),
                 cached: true
             };
@@ -922,7 +923,33 @@ function handleHeartbeat(ss, payload) {
         }
     }
 
-    // 3. Get Messages (OPTIMIZED PARTIAL READ)
+    // 3. Get Warehouse Updates (NEW)
+    // Always return warehouse state if system is dirty, because inventory changes don't have a granular timestamp per item usually.
+    // Or we could try to optimize, but for now, sending the warehouse state (which is small-ish) is safer for accuracy.
+    const setSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
+    const setRows = setSheet.getDataRange().getValues();
+    let foamCounts = { openCellSets: 0, closedCellSets: 0 };
+    for (let i = 0; i < setRows.length; i++) {
+        if (setRows[i][0] === 'warehouse_counts' || setRows[i][0] === 'warehouse') {
+            foamCounts = safeParse(setRows[i][1]) || foamCounts;
+        }
+    }
+    
+    // Get Inventory Items
+    const iSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
+    let inventoryItems = [];
+    if (iSheet && iSheet.getLastRow() > 1) {
+       const iData = iSheet.getRange(2, CONSTANTS.COL_JSON_INVENTORY, iSheet.getLastRow() - 1, 1).getValues();
+       inventoryItems = iData.map(r => safeParse(r[0])).filter(Boolean);
+    }
+    
+    const warehouseData = {
+        openCellSets: foamCounts.openCellSets || 0,
+        closedCellSets: foamCounts.closedCellSets || 0,
+        items: inventoryItems
+    };
+
+    // 4. Get Messages (OPTIMIZED PARTIAL READ)
     const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
 
     // Only read the last 200 rows + header. 
@@ -954,6 +981,7 @@ function handleHeartbeat(ss, payload) {
     return {
         jobUpdates,
         messages: newMessages,
+        warehouse: warehouseData, // Return full warehouse state when dirty
         serverTime: new Date().toISOString()
     };
 }
