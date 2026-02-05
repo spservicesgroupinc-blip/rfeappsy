@@ -252,7 +252,6 @@ export const InvoiceStage: React.FC<InvoiceStageProps> = ({
                                 <CheckCircle2 className="w-5 h-5" /> Payment Recorded
                             </div>
                         ) : (
-                        ) : (
                             <>
                                 {/* MUTUALLY EXCLUSIVE ACTIONS */}
                                 {statusLabel === 'Invoiced' ? (
