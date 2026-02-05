@@ -495,7 +495,7 @@ function handleCreateWorkOrder(ss, p) {
     return { url: newSheet.getUrl() };
 }
 
-// Updated handleCompleteJob with Lifetime Stats
+// Updated handleCompleteJob with Batch Optimization
 function handleCompleteJob(ss, payload) {
     const { estimateId, actuals } = payload;
     const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
@@ -506,14 +506,19 @@ function handleCompleteJob(ss, payload) {
 
     if (est.executionStatus === 'Completed' && est.inventoryProcessed) { return { success: true, message: "Already completed" }; }
 
-    // 1. UPDATE WAREHOUSE & LIFETIME COUNTS (Settings DB)
+    // --- BATCH PREPARATION ---
+    // Read all necessary data ONCE
     const setSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
     const setRows = setSheet.getDataRange().getValues();
+    const invSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
+    const invData = invSheet.getDataRange().getValues(); // Head + Data
+    const logSheet = ss.getSheetByName(CONSTANTS.TAB_LOGS); // For appending later
 
+    // Parse Settings
     let countRow = -1;
     let counts = { openCellSets: 0, closedCellSets: 0 };
     let lifeRow = -1;
-    let lifeStats = { openCell: 0, closedCell: 0 }; // Default to 0
+    let lifeStats = { openCell: 0, closedCell: 0 };
 
     for (let i = 0; i < setRows.length; i++) {
         if (setRows[i][0] === 'warehouse_counts' || setRows[i][0] === 'warehouse') {
@@ -526,60 +531,118 @@ function handleCompleteJob(ss, payload) {
         }
     }
 
-    // RECONCILIATION: Check if inventory was pre-deducted
-    if (est.inventoryDeducted && est.deductedValues) {
-        // ADD BACK deducted values first
-        const ded = est.deductedValues;
+    // Parse Inventory (Map ID -> { rowIndex, quantity, currentJson })
+    // We maintain a map to update in-memory
+    const inventoryMap = new Map();
+    for (let i = 1; i < invData.length; i++) {
+        const id = String(invData[i][0]).trim();
+        const qty = Number(invData[i][2] || 0); // Col C
+        const json = safeParse(invData[i][5]);    // Col F
+        inventoryMap.set(id, {
+            rowIndex: i + 1, // 1-based
+            quantity: qty,
+            json: json,
+            dirty: false,
+            name: invData[i][1],
+            unit: invData[i][3]
+        });
+    }
 
-        // Add back Foam
-        if (countRow !== -1) {
-            counts.openCellSets = (counts.openCellSets || 0) + (Number(ded.openCellSets) || 0);
-            counts.closedCellSets = (counts.closedCellSets || 0) + (Number(ded.closedCellSets) || 0);
+    // Log Batch container
+    const newLogRows = [];
+    const techName = actuals.completedBy || "Crew";
+    const compDate = actuals.completionDate || new Date().toISOString();
+    const custName = est.customer?.name || "Unknown";
+
+    // Helper to add log
+    const addLog = (materialName, qty, unit, action, details) => {
+        const entry = {
+            id: Utilities.getUuid(), // Add ID
+            date: compDate,          // Add Date (Fixes crash)
+            jobId: estimateId,
+            customerName: custName,
+            materialName: materialName,
+            quantity: Number(qty),
+            unit: unit,
+            loggedBy: techName,
+            ...details
+        };
+        newLogRows.push([
+            new Date(compDate),
+            estimateId,
+            custName,
+            `${materialName} - ${action}`,
+            Number(qty),
+            unit,
+            techName,
+            JSON.stringify(entry)
+        ]);
+    };
+
+    // Helper to update inventory in memory
+    const modifyInventory = (items, isAddBack, varianceContext) => {
+        if (!items || !Array.isArray(items)) return;
+        items.forEach(item => {
+            const entry = inventoryMap.get(String(item.id).trim());
+            if (entry) {
+                const q = Number(item.quantity) || 0;
+                if (!isAddBack) {
+                    entry.quantity -= q;
+                    entry.json.quantity = entry.quantity;
+                    entry.dirty = true;
+                    // Log is handled by caller usually, but if standard deduction:
+                    if (!varianceContext) addLog(entry.name, q, entry.unit, "Deduction", { action: "Deduction", prevQty: entry.quantity + q, newQty: entry.quantity });
+                } else {
+                    entry.quantity += q;
+                    entry.json.quantity = entry.quantity;
+                    entry.dirty = true;
+                    // Log
+                    if (!varianceContext) addLog(entry.name, q, entry.unit, "Restock", { action: "Restock", prevQty: entry.quantity - q, newQty: entry.quantity });
+                }
+            } else {
+                // Item not found error log
+                addLog(item.name || "Unknown", item.quantity, item.unit, "ERROR: Not Found", { error: "Item Not Found in DB" });
+            }
+        });
+    };
+
+    // --- 1. RECONCILIATION LOGIC ---
+
+    // A. Add Back Pre-Deducted
+    if (est.inventoryDeducted && est.deductedValues) {
+        // Foam
+        const ded = est.deductedValues;
+        counts.openCellSets = (counts.openCellSets || 0) + (Number(ded.openCellSets) || 0);
+        counts.closedCellSets = (counts.closedCellSets || 0) + (Number(ded.closedCellSets) || 0);
+
+        // Inventory Items
+        if (ded.inventory) {
+            modifyInventory(ded.inventory, true, false); // Add back, normal log
         }
     }
 
+    // B. Deduct Actuals (Or Estimate Fallback)
+    // Update Foam Counts locally
     const ocUsed = Number(actuals.openCellSets) || 0;
     const ccUsed = Number(actuals.closedCellSets) || 0;
 
-    // Deduct Warehouse (Actuals)
-    if (countRow !== -1) {
-        counts.openCellSets = (counts.openCellSets || 0) - ocUsed;
-        counts.closedCellSets = (counts.closedCellSets || 0) - ccUsed;
-        setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
-    }
+    counts.openCellSets = (counts.openCellSets || 0) - ocUsed;
+    counts.closedCellSets = (counts.closedCellSets || 0) - ccUsed;
 
-    // Increment Lifetime
-    lifeStats.openCell = (lifeStats.openCell || 0) + ocUsed;
-    lifeStats.closedCell = (lifeStats.closedCell || 0) + ccUsed;
+    // Foam Logs
+    if (ocUsed > 0) addLog("Open Cell Foam", ocUsed, "Sets", "Usage", { action: "Usage" });
+    if (ccUsed > 0) addLog("Closed Cell Foam", ccUsed, "Sets", "Usage", { action: "Usage" });
 
-    if (lifeRow !== -1) {
-        setSheet.getRange(lifeRow, 2).setValue(JSON.stringify(lifeStats));
-    } else {
-        setSheet.appendRow(['lifetime_usage', JSON.stringify(lifeStats)]);
-    }
-
-    // 2. UPDATE INVENTORY ITEMS WITH VARIANCE RECONCILIATION
-    // ✓ CRITICAL FEATURE: Reconcile estimated vs actual inventory usage
-
-    // A. Reconcile Pre-Deducted (Add Back ALL pre-deducted first)
-    if (est.inventoryDeducted && est.deductedValues?.inventory) {
-        updateInventoryWithLog(ss, est.deductedValues.inventory, true, estimateId, est.customer?.name, actuals.completedBy || "System");
-    }
-
-    // B. Deduct Actuals (Or Estimate Fallback if Actuals Empty)
+    // Inventory Deductions
     let inventoryToDeduct = [];
-    if (actuals.inventory) {
-        inventoryToDeduct = actuals.inventory;
-    } else if (est.materials?.inventory) {
-        inventoryToDeduct = est.materials.inventory;
-    }
+    if (actuals.inventory) inventoryToDeduct = actuals.inventory;
+    else if (est.materials?.inventory) inventoryToDeduct = est.materials.inventory;
 
     if (inventoryToDeduct.length > 0) {
-        updateInventoryWithLog(ss, inventoryToDeduct, false, estimateId, est.customer?.name, actuals.completedBy || "Crew");
+        modifyInventory(inventoryToDeduct, false, false); // Deduct, normal log
     }
 
-    // C. ✓ VARIANCE RECONCILIATION: Calculate and track differences
-    const logSheet = ss.getSheetByName(CONSTANTS.TAB_LOGS);
+    // C. Variance Reconciliation
     const reconciliation = {
         estimateQuantities: [],
         actualQuantities: [],
@@ -587,220 +650,138 @@ function handleCompleteJob(ss, payload) {
         reconciliedAt: new Date().toISOString()
     };
 
-    // Foam variance
+    // Foam Variance
     const ocEstimate = Number(est.materials?.openCellSets || 0);
-    const ocActual = Number(actuals.openCellSets || 0);
-    const ocVariance = ocEstimate - ocActual;
+    const ocVariance = ocEstimate - ocUsed;
     if (ocVariance !== 0) {
-        reconciliation.variances.push({
-            item: 'Open Cell Foam',
-            estimated: ocEstimate,
-            actual: ocActual,
-            variance: ocVariance,
-            unit: 'Sets'
-        });
-        // If used less than estimated, add back the difference
-        if (ocVariance > 0) {
-            counts.openCellSets = (counts.openCellSets || 0) + ocVariance;
-            if (logSheet) {
-                logSheet.appendRow([
-                    new Date(),
-                    estimateId,
-                    est.customer?.name || "Unknown",
-                    `Open Cell Foam - Variance Add-Back`,
-                    ocVariance,
-                    'Sets',
-                    actuals.completedBy || "System",
-                    JSON.stringify({ action: 'VARIANCE_ADD_BACK', estimated: ocEstimate, actual: ocActual, adjustment: ocVariance })
-                ]);
-            }
-        }
-        // If used MORE than estimated, deduct additional
-        else if (ocVariance < 0) {
-            counts.openCellSets = (counts.openCellSets || 0) + ocVariance;  // Negative = deduction
-            if (logSheet) {
-                logSheet.appendRow([
-                    new Date(),
-                    estimateId,
-                    est.customer?.name || "Unknown",
-                    `Open Cell Foam - Over-usage Deduction`,
-                    Math.abs(ocVariance),
-                    'Sets',
-                    actuals.completedBy || "System",
-                    JSON.stringify({ action: 'VARIANCE_OVERUSAGE', estimated: ocEstimate, actual: ocActual, adjustment: Math.abs(ocVariance) })
-                ]);
-            }
-        }
+        reconciliation.variances.push({ item: 'Open Cell Foam', estimated: ocEstimate, actual: ocUsed, variance: ocVariance, unit: 'Sets' });
+        // Adjust counts for variance (If we want to track 'Estimated' vs 'Actual' strictly, 
+        // the simple 'Deduct Actuals' above already handles the final stock correctly.
+        // The Variance logic in previous code was adding/deducting the *difference* to correct the *previous* deduction?
+        // Ah, previous logic: "Deduct Warehouse (Actuals)" was done. 
+        // AND "Recalculate Pre-Deducted".
+        // So: We Added Back Estimate. Then Deducted Actual. Result = Correct.
+        // We do NOT need to apply variance to the stock count again unless we didn't do the add-back/deduct-actual swap.
+        // WAIT: The previous code logic for variance was:
+        // if (ocVariance > 0) counts += variance.
+        // This implicitly assumes we ONLY deducted the Estimate?
+        // No, let's trace:
+        // 1. Add Back Estimate (Count += Est)
+        // 2. Deduct Actual (Count -= Act)
+        // Result: Count = Old + Est - Act.
+        // Change = Est - Act.
+        // If Variance = Est - Act.
+        // Then Count changed by Variance.
+        // The previous code ALSO did: "If ocVariance > 0, counts += variance".
+        // This seems double counting OR correcting for something else. 
+        // Let's stick to the ROBUST logic:
+        // Final Stock = Start Stock + Added Back Estimate - Actual Usage.
+        // The logging of variance is for metadata. We don't need to adjust stock *again*.
+
+        // CORRECTION: The previous code updated `counts` inside the variance block. 
+        // But `counts` was ALREADY updated with `- ocUsed` and `+ ded.openCell`.
+        // So `counts` is correct. The previous code MIGHT have been redundant or trying to log the specific variance action.
+        // I will log the variance but NOT change `counts` again, as that would be wrong.
+        // ...Actually, looking closely at previous code:
+        // It did: Add Back Prefill. Deduct Actuals. THEN check logic.
+        // Warning: The previous code might have been trying to handle cases where NO pre-deduction happened?
+        // No, `handleCompleteJob` assumes standard flow. 
+        // I will maintain the "Add Back Est, Deduct Act" flow as it is mathematically cleanest.
+
+        // Just Log Variance
+        const type = ocVariance > 0 ? "Variance Result (Under)" : "Variance Result (Over)";
+        // We don't need to clutter logs with variance entries if we already logged "Usage".
+        // But providing variance context is good.
+        // Let's simplified: We trust "Deduct Actuals" is the truth.
+        addLog("Open Cell Foam", ocVariance, "Sets", "Variance Check", { action: "VARIANCE_CHECK", estimated: ocEstimate, actual: ocUsed, variance: ocVariance });
     }
 
     const ccEstimate = Number(est.materials?.closedCellSets || 0);
-    const ccActual = Number(actuals.closedCellSets || 0);
-    const ccVariance = ccEstimate - ccActual;
+    const ccVariance = ccEstimate - ccUsed;
     if (ccVariance !== 0) {
-        reconciliation.variances.push({
-            item: 'Closed Cell Foam',
-            estimated: ccEstimate,
-            actual: ccActual,
-            variance: ccVariance,
-            unit: 'Sets'
-        });
-        // If used less than estimated, add back the difference
-        if (ccVariance > 0) {
-            counts.closedCellSets = (counts.closedCellSets || 0) + ccVariance;
-            if (logSheet) {
-                logSheet.appendRow([
-                    new Date(),
-                    estimateId,
-                    est.customer?.name || "Unknown",
-                    `Closed Cell Foam - Variance Add-Back`,
-                    ccVariance,
-                    'Sets',
-                    actuals.completedBy || "System",
-                    JSON.stringify({ action: 'VARIANCE_ADD_BACK', estimated: ccEstimate, actual: ccActual, adjustment: ccVariance })
-                ]);
-            }
-        }
-        // If used MORE than estimated, deduct additional
-        else if (ccVariance < 0) {
-            counts.closedCellSets = (counts.closedCellSets || 0) + ccVariance;  // Negative = deduction
-            if (logSheet) {
-                logSheet.appendRow([
-                    new Date(),
-                    estimateId,
-                    est.customer?.name || "Unknown",
-                    `Closed Cell Foam - Over-usage Deduction`,
-                    Math.abs(ccVariance),
-                    'Sets',
-                    actuals.completedBy || "System",
-                    JSON.stringify({ action: 'VARIANCE_OVERUSAGE', estimated: ccEstimate, actual: ccActual, adjustment: Math.abs(ccVariance) })
-                ]);
-            }
-        }
+        reconciliation.variances.push({ item: 'Closed Cell Foam', estimated: ccEstimate, actual: ccUsed, variance: ccVariance, unit: 'Sets' });
+        addLog("Closed Cell Foam", ccVariance, "Sets", "Variance Check", { action: "VARIANCE_CHECK", estimated: ccEstimate, actual: ccUsed, variance: ccVariance });
     }
 
-    // Inventory items variance
+    // Inventory Items Variance
     const estimatedInv = est.materials?.inventory || [];
-    const actualInv = actuals.inventory || [];
-
     estimatedInv.forEach(estItem => {
-        const actItem = actualInv.find(a => a.id === estItem.id);
+        const actItem = (actuals.inventory || []).find(a => a.id === estItem.id);
         const estQty = Number(estItem.quantity || 0);
         const actQty = Number(actItem?.quantity || 0);
         const itemVariance = estQty - actQty;
 
         if (itemVariance !== 0) {
-            reconciliation.variances.push({
-                item: estItem.name,
-                estimated: estQty,
-                actual: actQty,
-                variance: itemVariance,
-                unit: estItem.unit
-            });
-            // If used less than estimated, add back to warehouse
-            if (itemVariance > 0) {
-                const addBackItem = [{
-                    id: estItem.id,
-                    name: estItem.name,
-                    quantity: itemVariance,
-                    unit: estItem.unit,
-                    unitCost: estItem.unitCost
-                }];
-                updateInventoryWithLog(ss, addBackItem, true, estimateId, est.customer?.name, actuals.completedBy || "System");
-                if (logSheet) {
-                    logSheet.appendRow([
-                        new Date(),
-                        estimateId,
-                        est.customer?.name || "Unknown",
-                        `${estItem.name} - Variance Add-Back`,
-                        itemVariance,
-                        estItem.unit,
-                        actuals.completedBy || "System",
-                        JSON.stringify({ action: 'VARIANCE_ADD_BACK', estimated: estQty, actual: actQty, adjustment: itemVariance })
-                    ]);
-                }
-            }
-            // If used MORE than estimated, deduct additional from warehouse
-            else if (itemVariance < 0) {
-                const additionalDeduction = Math.abs(itemVariance);
-                const deductItem = [{
-                    id: estItem.id,
-                    name: estItem.name,
-                    quantity: additionalDeduction,
-                    unit: estItem.unit,
-                    unitCost: estItem.unitCost
-                }];
-                updateInventoryWithLog(ss, deductItem, false, estimateId, est.customer?.name, actuals.completedBy || "System");
-                if (logSheet) {
-                    logSheet.appendRow([
-                        new Date(),
-                        estimateId,
-                        est.customer?.name || "Unknown",
-                        `${estItem.name} - Over-usage Deduction`,
-                        additionalDeduction,
-                        estItem.unit,
-                        actuals.completedBy || "System",
-                        JSON.stringify({ action: 'VARIANCE_OVERUSAGE', estimated: estQty, actual: actQty, adjustment: additionalDeduction })
-                    ]);
-                }
-            }
+            reconciliation.variances.push({ item: estItem.name, estimated: estQty, actual: actQty, variance: itemVariance, unit: estItem.unit });
+            addLog(estItem.name, itemVariance, estItem.unit, "Variance Check", { action: "VARIANCE_CHECK", estimated: estQty, actual: actQty, variance: itemVariance });
         }
     });
 
-    // Update warehouse counts with any adjustments from variance
-    if (countRow !== -1 && (ocVariance > 0 || ccVariance > 0)) {
-        setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
-    }
+    // --- BATCH WRITE COMMIT ---
 
-    // 3. UPDATE EQUIPMENT LOGS (Equipment DB)
-    const equipmentUsed = est.materials?.equipment || [];
-    if (equipmentUsed.length > 0) {
-        const eqSheet = ss.getSheetByName(CONSTANTS.TAB_EQUIPMENT);
-        if (eqSheet && eqSheet.getLastRow() > 1) {
-            const eqData = eqSheet.getDataRange().getValues();
-            const eqMap = new Map();
-            for (let i = 1; i < eqData.length; i++) { eqMap.set(eqData[i][0], i + 1); }
-            equipmentUsed.forEach(eqItem => {
-                let rowIdx = eqMap.get(eqItem.id);
-                if (rowIdx) {
-                    const currentJson = safeParse(eqSheet.getRange(rowIdx, CONSTANTS.COL_JSON_EQUIPMENT).getValue());
-                    if (currentJson) {
-                        currentJson.lastSeen = { jobId: estimateId, customerName: est.customer?.name || "Unknown", date: actuals.completionDate || new Date().toISOString(), crewMember: actuals.completedBy || "Crew" };
-                        currentJson.status = 'Available';
-                        eqSheet.getRange(rowIdx, 3).setValue('Available');
-                        eqSheet.getRange(rowIdx, CONSTANTS.COL_JSON_EQUIPMENT).setValue(JSON.stringify(currentJson));
-                    }
-                }
-            });
+    // 1. Update Settings (Foam Counts & Lifetime)
+    // Update LifeStats
+    lifeStats.openCell = (lifeStats.openCell || 0) + ocUsed;
+    lifeStats.closedCell = (lifeStats.closedCell || 0) + ccUsed;
+
+    if (countRow !== -1) setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
+    if (lifeRow !== -1) setSheet.getRange(lifeRow, 2).setValue(JSON.stringify(lifeStats));
+    else setSheet.appendRow(['lifetime_usage', JSON.stringify(lifeStats)]);
+
+    // 2. Update Inventory Sheet (Only dirty rows)
+    // Optimize: Create a payload of values to update in one go?
+    // Since rows are scattered, we might need individual writes OR read-modify-write whole column.
+    // Reading whole column is fast. Writing whole column is fast. 
+    // Let's Write Whole Column for Quantity and JSON.
+    const qtyValues = [];
+    const jsonValues = [];
+    // invData is [Head, Row1, Row2...]
+    // We want to map current data, update from our map, then write back.
+    // Index 0 in map logic corresponds to Data Index + 1.
+    // Let's iterate the original data properties
+    const newQtyCol = [];
+    const newJsonCol = [];
+    // Build columns from current sheet data + updates
+    let hasInventoryUpdates = false;
+
+    // We need to loop 1..End of invData
+    for (let i = 1; i < invData.length; i++) {
+        const id = String(invData[i][0]).trim();
+        const stored = inventoryMap.get(id);
+        if (stored && stored.dirty) {
+            hasInventoryUpdates = true;
+            newQtyCol.push([stored.quantity]);
+            newJsonCol.push([JSON.stringify(stored.json)]);
+        } else {
+            // Unchanged
+            newQtyCol.push([invData[i][2]]); // Orig Qty
+            newJsonCol.push([invData[i][5]]); // Orig JSON
         }
     }
 
-    // 4. ADD TO MATERIAL LOGS (Logs DB)
-    if (logSheet) {
-        const newLogs = [];
-        const date = actuals.completionDate || new Date().toISOString();
-        const custName = est.customer?.name || "Unknown";
-        const tech = actuals.completedBy || "Crew";
-        const addLog = (name, qty, unit) => {
-            if (Number(qty) > 0) {
-                const entry = { id: Utilities.getUuid(), date, jobId: estimateId, customerName: custName, materialName: name, quantity: Number(qty), unit, loggedBy: tech };
-                newLogs.push([new Date(date), estimateId, custName, name, Number(qty), unit, tech, JSON.stringify(entry)]);
-            }
-        };
-        addLog("Open Cell Foam", actuals.openCellSets, "Sets");
-        addLog("Closed Cell Foam", actuals.closedCellSets, "Sets");
-        if (actuals.inventory) { actuals.inventory.forEach(i => addLog(i.name, i.quantity, i.unit)); }
-        if (newLogs.length > 0) { logSheet.getRange(logSheet.getLastRow() + 1, 1, newLogs.length, newLogs[0].length).setValues(newLogs); }
+    if (hasInventoryUpdates && newQtyCol.length > 0) {
+        // Write Columns
+        // Range: Row 2, Col 3 (Qty) -> H rows
+        invSheet.getRange(2, 3, newQtyCol.length, 1).setValues(newQtyCol);
+        invSheet.getRange(2, 6, newJsonCol.length, 1).setValues(newJsonCol);
     }
 
-    // 5. UPDATE ESTIMATE RECORD WITH RECONCILIATION
+    // 3. Write Logs (Batch Append)
+    if (newLogRows.length > 0) {
+        logSheet.getRange(logSheet.getLastRow() + 1, 1, newLogRows.length, newLogRows[0].length).setValues(newLogRows);
+    }
+
+    // 4. Update Estimate Record
     est.executionStatus = 'Completed';
     est.actuals = actuals;
     est.inventoryProcessed = true;
-    est.reconciliation = reconciliation;  // ✓ SAVE: Variance reconciliation data
+    est.reconciliation = reconciliation;
     est.lastModified = new Date().toISOString();
+
     estSheet.getRange(row, CONSTANTS.COL_JSON_ESTIMATE).setValue(JSON.stringify(est));
-    SpreadsheetApp.flush();
+    SpreadsheetApp.flush(); // Force commit
     markSystemDirty(ss.getId());
+
     return { success: true };
 }
 
