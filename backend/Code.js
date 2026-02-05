@@ -222,12 +222,22 @@ function handleSyncDown(ss) {
         const data = setSheet.getRange(2, 1, setSheet.getLastRow() - 1, 2).getValues();
         data.forEach(row => { if (row[0] && row[1]) settings[row[0]] = safeParse(row[1]); });
     }
-    const foamCounts = settings['warehouse_counts'] || settings['warehouse'] || { openCellSets: 0, closedCellSets: 0 };
+    // Robust Warehouse Counts Retrieval
+    let foamCounts = { openCellSets: 0, closedCellSets: 0 };
+    if (settings['warehouse_counts']) foamCounts = settings['warehouse_counts'];
+    else if (settings['warehouse']) foamCounts = settings['warehouse']; // Legacy fallback
+
     const lifetimeUsage = settings['lifetime_usage'] || { openCell: 0, closedCell: 0 };
 
     const inventoryItems = getSheetData(CONSTANTS.TAB_INVENTORY, CONSTANTS.COL_JSON_INVENTORY);
     const equipmentItems = getSheetData(CONSTANTS.TAB_EQUIPMENT, CONSTANTS.COL_JSON_EQUIPMENT);
-    const assembledWarehouse = { openCellSets: foamCounts.openCellSets || 0, closedCellSets: foamCounts.closedCellSets || 0, items: inventoryItems || [] };
+
+    // Assemble Warehouse State
+    const assembledWarehouse = {
+        openCellSets: Number(foamCounts.openCellSets || 0),
+        closedCellSets: Number(foamCounts.closedCellSets || 0),
+        items: inventoryItems || []
+    };
     const savedEstimates = getSheetData(CONSTANTS.TAB_ESTIMATES, CONSTANTS.COL_JSON_ESTIMATE);
     const customers = getSheetData(CONSTANTS.TAB_CUSTOMERS, CONSTANTS.COL_JSON_CUSTOMER);
     let materialLogs = [];
@@ -252,8 +262,15 @@ function handleSyncUp(ss, payload) {
     existingData.forEach(r => settingsMap.set(r[0], r[1]));
     settingsKeys.forEach(key => { if (state[key] !== undefined) settingsMap.set(key, JSON.stringify(state[key])); });
 
+    // Explicitly handle Warehouse Counts to ensure it survives sync
     if (state.warehouse) {
-        settingsMap.set('warehouse_counts', JSON.stringify({ openCellSets: state.warehouse.openCellSets, closedCellSets: state.warehouse.closedCellSets }));
+        const counts = {
+            openCellSets: Number(state.warehouse.openCellSets || 0),
+            closedCellSets: Number(state.warehouse.closedCellSets || 0)
+        };
+        settingsMap.set('warehouse_counts', JSON.stringify(counts));
+
+        // Sync Inventory Items
         if (state.warehouse.items && Array.isArray(state.warehouse.items)) {
             const iSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
             if (iSheet.getLastRow() > 1) iSheet.getRange(2, 1, iSheet.getLastRow() - 1, iSheet.getLastColumn()).clearContent();
