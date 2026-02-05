@@ -55,12 +55,36 @@ function validateToken(token) {
 
 function doPost(e) {
     const lock = LockService.getScriptLock();
-    if (!lock.tryLock(45000)) return sendResponse('error', 'Server busy. Please try again.');
+    // Parse request FIRST to determine Lock Priority
+    let req;
     try {
         if (!e?.postData) throw new Error("No payload.");
-        const req = JSON.parse(e.postData.contents);
-        const { action, payload } = req;
+        req = JSON.parse(e.postData.contents);
+    } catch (parseEr) {
+        return sendResponse('error', "Invalid Request");
+    }
+
+    const { action, payload } = req;
+
+    // PRIORITY LOCKING STRATEGY
+    // Writes (SYNC_UP, COMPLETE_JOB) get full wait time.
+    // Reads/Background (HEARTBEAT) fail fast to avoid congestion.
+    let lockTimeout = 45000;
+    if (action === 'HEARTBEAT') lockTimeout = 0; // Immediate fail if busy
+    else if (action === 'SYNC_DOWN') lockTimeout = 10000; // 10s wait for initial load
+
+    if (!lock.tryLock(lockTimeout)) {
+        if (action === 'HEARTBEAT') {
+            // Return success with 'skipped' flag logic handled by frontend or ignored
+            // We return a valid structure so frontend doesn't error out
+            return sendResponse('success', { skipped: true, serverTime: new Date().toISOString() });
+        }
+        return sendResponse('error', 'Server busy. Please try again.');
+    }
+
+    try {
         let result;
+        // Proceed with Action
         if (action === 'LOGIN') result = handleLogin(payload);
         else if (action === 'SIGNUP') result = handleSignup(payload);
         else if (action === 'CREW_LOGIN') result = handleCrewLogin(payload);

@@ -1,5 +1,5 @@
 
-import { GOOGLE_SCRIPT_URL } from '../constants';
+import { GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_READ_URL } from '../constants';
 import { CalculatorState, EstimateRecord, UserSession } from '../types';
 
 interface ApiResponse {
@@ -17,15 +17,21 @@ const isApiConfigured = () => {
 
 /**
  * Helper for making robust fetch requests to GAS
- * Includes retry logic for cold starts
+ * Includes retry logic for cold starts and Dual-Engine Routing
  */
 const apiRequest = async (payload: any, retries = 2): Promise<ApiResponse> => {
   if (!isApiConfigured()) {
     return { status: 'error', message: 'API Config Missing' };
   }
 
+  // Dual-Engine Routing
+  let targetUrl = GOOGLE_SCRIPT_URL;
+  if (payload.action === 'HEARTBEAT' && GOOGLE_SCRIPT_READ_URL && GOOGLE_SCRIPT_READ_URL.length > 10) {
+    targetUrl = GOOGLE_SCRIPT_READ_URL;
+  }
+
   try {
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       mode: 'cors',
       headers: {
