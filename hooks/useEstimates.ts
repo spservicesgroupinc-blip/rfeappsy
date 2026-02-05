@@ -89,7 +89,7 @@ export const useEstimates = () => {
         return null;
     };
 
-    const saveEstimate = async (results: CalculationResults, targetStatus?: EstimateRecord['status'], extraData?: Partial<EstimateRecord>, shouldRedirect: boolean = true) => {
+    const saveEstimate = async (results: CalculationResults, targetStatus?: EstimateRecord['status'], extraData?: Partial<EstimateRecord>, shouldRedirect: boolean = true, shouldSync: boolean = false) => {
         if (!appData.customerProfile.name) {
             dispatch({ type: 'SET_NOTIFICATION', payload: { type: 'error', message: 'Customer Name Required to Save' } });
             return null;
@@ -172,6 +172,15 @@ export const useEstimates = () => {
             targetStatus === 'Invoiced' ? 'Invoice Generated' :
                 targetStatus === 'Paid' ? 'Payment Recorded' : 'Estimate Saved';
         dispatch({ type: 'SET_NOTIFICATION', payload: { type: 'success', message: actionLabel } });
+
+        // FORCE SYNC (If requested)
+        if (shouldSync && session?.spreadsheetId) {
+            dispatch({ type: 'SET_Notification', payload: { type: 'success', message: 'Saving to Cloud...' } });
+            dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
+            const newState = { ...appData, savedEstimates: updatedEstimates };
+            await syncUp(newState, session.spreadsheetId);
+            dispatch({ type: 'SET_SYNC_STATUS', payload: 'idle' });
+        }
 
         return newEstimate;
     };

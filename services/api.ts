@@ -1,5 +1,4 @@
-
-import { GOOGLE_SCRIPT_URL, GOOGLE_SCRIPT_READ_URL } from '../constants';
+import { SERVICES, ACTION_MAP } from '../constants';
 import { CalculatorState, EstimateRecord, UserSession } from '../types';
 
 interface ApiResponse {
@@ -12,22 +11,28 @@ interface ApiResponse {
  * Helper to check if API is configured
  */
 const isApiConfigured = () => {
-  return GOOGLE_SCRIPT_URL && !GOOGLE_SCRIPT_URL.includes('PLACEHOLDER');
+  // Check if at least one service is configured or if using legacy
+  return SERVICES.AUTH && !SERVICES.AUTH.includes('PLACEHOLDER');
 };
 
 /**
  * Helper for making robust fetch requests to GAS
- * Includes retry logic for cold starts and Dual-Engine Routing
+ * Includes retry logic for cold starts and 3-Service Routing
  */
 const apiRequest = async (payload: any, retries = 2): Promise<ApiResponse> => {
   if (!isApiConfigured()) {
+    // Fallback: If user hasn't set up new URLs yet, this will fail.
+    // Development mode check
     return { status: 'error', message: 'API Config Missing' };
   }
 
-  // Dual-Engine Routing
-  let targetUrl = GOOGLE_SCRIPT_URL;
-  if (payload.action === 'HEARTBEAT' && GOOGLE_SCRIPT_READ_URL && GOOGLE_SCRIPT_READ_URL.length > 10) {
-    targetUrl = GOOGLE_SCRIPT_READ_URL;
+  // 3-Service Routing
+  const action = payload.action;
+  const serviceKey = ACTION_MAP[action] || 'OPS'; // Default to Ops if unknown
+  const targetUrl = SERVICES[serviceKey];
+
+  if (!targetUrl || targetUrl.includes('PLACEHOLDER')) {
+    return { status: 'error', message: `Service URL for ${serviceKey} is not configured.` };
   }
 
   try {

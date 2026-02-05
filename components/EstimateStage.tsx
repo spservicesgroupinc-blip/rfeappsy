@@ -170,7 +170,7 @@ export const EstimateStage: React.FC<EstimateStageProps> = ({
         const updatedRecord = await saveEstimate(results, undefined, {
             estimateLines: estimateLines,
             totalValue: estimateTotal
-        }, false);
+        }, false, true); // True = Force Sync immediately
 
         if (updatedRecord) {
             // STAGE 2: GENERATE & UPLOAD PDF

@@ -958,15 +958,19 @@ function handleHeartbeat(ss, payload) {
         }
     }
 
-    // 3. Get Warehouse Updates (NEW)
-    // Always return warehouse state if system is dirty, because inventory changes don't have a granular timestamp per item usually.
-    // Or we could try to optimize, but for now, sending the warehouse state (which is small-ish) is safer for accuracy.
+    // 3. Get Warehouse Counts & Lifetime Logs (NEW - Consolidated)
     const setSheet = ss.getSheetByName(CONSTANTS.TAB_SETTINGS);
     const setRows = setSheet.getDataRange().getValues();
     let foamCounts = { openCellSets: 0, closedCellSets: 0 };
+    let lifeStats = { openCell: 0, closedCell: 0 };
+
     for (let i = 0; i < setRows.length; i++) {
-        if (setRows[i][0] === 'warehouse_counts' || setRows[i][0] === 'warehouse') {
+        const key = setRows[i][0];
+        if (key === 'warehouse_counts' || key === 'warehouse') {
             foamCounts = safeParse(setRows[i][1]) || foamCounts;
+        }
+        if (key === 'lifetime_usage') {
+            lifeStats = safeParse(setRows[i][1]) || lifeStats;
         }
     }
 
@@ -986,6 +990,7 @@ function handleHeartbeat(ss, payload) {
 
     // 4. Get Messages (OPTIMIZED PARTIAL READ)
     const msgSheet = ensureSheet(ss, CONSTANTS.TAB_MESSAGES, ["ID", "Estimate ID", "Sender", "Content", "Timestamp", "Read Info", "JSON_DATA"]);
+
 
     // Only read the last 200 rows + header. 
     const lastRow = msgSheet.getLastRow();
@@ -1043,6 +1048,7 @@ function handleHeartbeat(ss, payload) {
         messages: newMessages,
         warehouse: warehouseData, // Return full warehouse state when dirty
         materialLogs: newMaterialLogs,
+        lifetimeUsage: lifeStats, // NEW
         serverTime: new Date().toISOString()
     };
 }

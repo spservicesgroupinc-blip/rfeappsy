@@ -144,7 +144,7 @@ type Action =
   | { type: 'UPDATE_SAVED_ESTIMATE'; payload: EstimateRecord }
   | { type: 'RESET_CALCULATOR' }
   | { type: 'LOGOUT' }
-  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[], warehouse?: any, materialLogs?: any[] } }; // NEW, Updated
+  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[], warehouse?: any, materialLogs?: any[], lifetimeUsage?: any } }; // NEW, Updated
 
 // --- REDUCER ---
 const initialState: ContextState = {
@@ -240,6 +240,12 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
         updatedWarehouse = action.payload.warehouse;
       }
 
+      // Merge Lifetime Usage (NEW)
+      let updatedLifetime = state.appData.lifetimeUsage;
+      if (action.payload.lifetimeUsage) {
+        updatedLifetime = action.payload.lifetimeUsage;
+      }
+
       return {
         ...state,
         appData: {
@@ -247,7 +253,8 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
           savedEstimates: updatedEstimates,
           messages: updatedMessages,
           materialLogs: updatedLogs, // Apply logs update
-          warehouse: updatedWarehouse // Apply warehouse update
+          warehouse: updatedWarehouse, // Apply warehouse update
+          lifetimeUsage: updatedLifetime // Apply lifetime update
         },
         ui: { ...state.ui, lastHeartbeat: new Date().toISOString() }
       };
@@ -356,8 +363,6 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
           const newWarehouse = result.data.warehouse;
           if (newWarehouse) {
             const currentW = state.appData.warehouse;
-            // Simple compare to avoid re-renders if backend sends same data
-            // We can check if stock counts changed
             if (
               newWarehouse.openCellSets !== currentW.openCellSets ||
               newWarehouse.closedCellSets !== currentW.closedCellSets ||
@@ -368,8 +373,29 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
             }
           }
 
+          // Check for lifetime usage updates (NEW)
+          const newLifetime = result.data.lifetimeUsage;
+          if (newLifetime) {
+            const currentLife = state.appData.lifetimeUsage;
+            if (
+              newLifetime.openCell !== currentLife.openCell ||
+              newLifetime.closedCell !== currentLife.closedCell
+            ) {
+              hasRealUpdates = true;
+            }
+          }
+
           if (hasRealUpdates) {
-            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages, warehouse: newWarehouse, materialLogs } });
+            dispatch({
+              type: 'RFE_HEARTBEAT_UPDATE',
+              payload: {
+                jobs: jobUpdates,
+                messages,
+                warehouse: newWarehouse,
+                materialLogs,
+                lifetimeUsage: newLifetime // Pass it through
+              }
+            });
           }
         }
       } catch (e) {
