@@ -230,13 +230,25 @@ export const useEstimates = () => {
     };
 
     const confirmWorkOrder = async (results: CalculationResults, workOrderLines?: InvoiceLineItem[]) => {
-        // ✓ INVENTORY DEDUCTION REMOVED: Backend handles all deductions (single source of truth)
-        // Backend's handleCreateWorkOrder will deduct when work order is created via createWorkOrderSheet
-        // Frontend only passes the calculated requirements, backend applies them
-        
+        // 1. Calculate Deductions Locally (To prevent Sync overwriting Backend Deduction)
         const newWarehouse = { ...appData.warehouse };
-        // ← No deduction here. Deductions happen atomically in backend via updateInventoryWithLog
-        
+        const newEstimates = [...appData.savedEstimates];
+
+        // Deduct Foam
+        if (results.openCellSets) newWarehouse.openCellSets = Math.max(0, (newWarehouse.openCellSets || 0) - results.openCellSets);
+        if (results.closedCellSets) newWarehouse.closedCellSets = Math.max(0, (newWarehouse.closedCellSets || 0) - results.closedCellSets);
+
+        // Deduct Inventory Items
+        if (appData.inventory && appData.inventory.length > 0) {
+            newWarehouse.items = newWarehouse.items.map(item => {
+                const deduction = appData.inventory.find(i => i.id === item.id);
+                if (deduction) {
+                    return { ...item, quantity: Math.max(0, (item.quantity || 0) - (deduction.quantity || 0)) };
+                }
+                return item;
+            });
+        }
+
         // 2. Save Estimate as Work Order & Update Warehouse State (Local First)
         dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
 
@@ -249,12 +261,10 @@ export const useEstimates = () => {
             dispatch({ type: 'SET_VIEW', payload: 'dashboard' });
             dispatch({ type: 'SET_NOTIFICATION', payload: { type: 'success', message: 'Work Order Created. Processing in background...' } });
 
-            // 4. Generate PDF Locally
-            // generateWorkOrderPDF(appData, record!);
-
             // 5. Background Sync & Sheet Creation
             // We do NOT await this here, allowing the UI to remain responsive.
             // We launch a fire-and-forget logic that updates state later.
+            // IMPORTANT: Pass the *newWarehouse* we just calculated so the sync doesn't revert counts!
             handleBackgroundWorkOrderGeneration(record, newWarehouse);
         }
     };

@@ -724,9 +724,17 @@ function handleCompleteJob(ss, payload) {
     lifeStats.openCell = (lifeStats.openCell || 0) + ocUsed;
     lifeStats.closedCell = (lifeStats.closedCell || 0) + ccUsed;
 
-    if (countRow !== -1) setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
-    if (lifeRow !== -1) setSheet.getRange(lifeRow, 2).setValue(JSON.stringify(lifeStats));
-    else setSheet.appendRow(['lifetime_usage', JSON.stringify(lifeStats)]);
+    if (countRow !== -1) {
+        setSheet.getRange(countRow, 2).setValue(JSON.stringify(counts));
+    } else {
+        setSheet.appendRow(['warehouse_counts', JSON.stringify(counts)]);
+    }
+
+    if (lifeRow !== -1) {
+        setSheet.getRange(lifeRow, 2).setValue(JSON.stringify(lifeStats));
+    } else {
+        setSheet.appendRow(['lifetime_usage', JSON.stringify(lifeStats)]);
+    }
 
     // 2. Update Inventory Sheet (Only dirty rows)
     // Optimize: Create a payload of values to update in one go?
