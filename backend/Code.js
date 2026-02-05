@@ -833,8 +833,20 @@ function updateInventoryWithLog(ss, itemsToDeduct, isAddBack, jobId, customerNam
         let rowIdx = itemMap.get(itemId);
         const itemName = item.name || "Unknown Item";
 
-        if (!rowIdx && itemName !== "Unknown Item") {
-            rowIdx = nameMap.get(itemName.trim().toLowerCase());
+        // ✓ FIX: Don't fallback to name matching - fail loudly if ID not found
+        if (!rowIdx) {
+            console.error(`INVENTORY ERROR: Item ID not found in warehouse: ${itemId} (${itemName})`);
+            logSheet.appendRow([
+                new Date(),
+                jobId,
+                customerName,
+                `ERROR: Item not found (ID: ${itemId})`,
+                0,
+                "-",
+                "SYSTEM_ERROR",
+                JSON.stringify({ error: 'ITEM_ID_NOT_FOUND', itemId, itemName })
+            ]);
+            return;  // Skip this item - don't attempt to deduct
         }
 
         const qty = Number(item.quantity) || 0;

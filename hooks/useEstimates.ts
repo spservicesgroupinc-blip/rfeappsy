@@ -230,24 +230,13 @@ export const useEstimates = () => {
     };
 
     const confirmWorkOrder = async (results: CalculationResults, workOrderLines?: InvoiceLineItem[]) => {
-        // 1. Deduct Inventory (Allow negatives - No checks/warnings/blocks)
-        const requiredOpen = Number(results.openCellSets) || 0;
-        const requiredClosed = Number(results.closedCellSets) || 0;
-
+        // ✓ INVENTORY DEDUCTION REMOVED: Backend handles all deductions (single source of truth)
+        // Backend's handleCreateWorkOrder will deduct when work order is created via createWorkOrderSheet
+        // Frontend only passes the calculated requirements, backend applies them
+        
         const newWarehouse = { ...appData.warehouse };
-        newWarehouse.openCellSets = newWarehouse.openCellSets - requiredOpen;
-        newWarehouse.closedCellSets = newWarehouse.closedCellSets - requiredClosed;
-
-        if (appData.inventory.length > 0) {
-            newWarehouse.items = newWarehouse.items.map(item => {
-                const used = appData.inventory.find(i => i.name === item.name);
-                if (used) {
-                    return { ...item, quantity: item.quantity - (Number(used.quantity) || 0) };
-                }
-                return item;
-            });
-        }
-
+        // ← No deduction here. Deductions happen atomically in backend via updateInventoryWithLog
+        
         // 2. Save Estimate as Work Order & Update Warehouse State (Local First)
         dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
 

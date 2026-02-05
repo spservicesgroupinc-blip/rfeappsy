@@ -79,6 +79,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         let totalCOGS = 0;
         let chemCost = 0;
         let laborCost = 0;
+        let inventoryCost = 0;  // ✓ ADD: Track warehouse inventory item costs
 
         soldJobs.forEach(job => {
             if (job.status === 'Paid' && job.financials) {
@@ -86,24 +87,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 totalCOGS += job.financials.totalCOGS;
                 chemCost += job.financials.chemicalCost;
                 laborCost += job.financials.laborCost;
+                inventoryCost += job.financials.inventoryCost || 0;  // ✓ ADD: Use paid job's inventory cost
             } else {
                 totalRevenue += job.totalValue || 0;
-                const matCost = job.results.materialCost || 0;
+                const matCost = job.results.materialCost || 0;  // Foam costs only
+                
+                // ✓ FIX: Calculate warehouse inventory item costs
+                let invCost = 0;
+                if (job.materials?.inventory && Array.isArray(job.materials.inventory)) {
+                    job.materials.inventory.forEach(item => {
+                        invCost += (Number(item.quantity) * Number(item.unitCost || 0));
+                    });
+                }
+                
                 const laborHrs = job.actuals?.laborHours || job.expenses.manHours || 0;
                 const laborRate = job.expenses.laborRate || state.costs.laborRate || 0;
                 const lCost = laborHrs * laborRate;
                 const misc = (job.expenses.tripCharge || 0) + (job.expenses.fuelSurcharge || 0) + (job.expenses.other?.amount || 0);
-                totalCOGS += (matCost + lCost + misc);
+                
+                // ✓ FIXED: Include inventory costs in total COGS
+                const jobCogs = matCost + invCost + lCost + misc;
+                totalCOGS += jobCogs;
                 chemCost += matCost;
                 laborCost += lCost;
+                inventoryCost += invCost;  // ✓ TRACK SEPARATELY
             }
         });
 
         const netProfit = totalRevenue - totalCOGS;
         const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-        const otherCost = totalCOGS - chemCost - laborCost;
+        const otherCost = totalCOGS - chemCost - laborCost - inventoryCost;  // ✓ FIXED: Subtract inventory from other
 
-        return { totalRevenue, totalCOGS, netProfit, margin, chemCost, laborCost, otherCost, jobCount: soldJobs.length };
+        return { totalRevenue, totalCOGS, netProfit, margin, chemCost, laborCost, inventoryCost, otherCost, jobCount: soldJobs.length };  // ✓ RETURN: inventoryCost
     }, [state.savedEstimates, state.warehouse.items, state.costs.laborRate]);
 
     const filteredEstimates = useMemo(() => {
