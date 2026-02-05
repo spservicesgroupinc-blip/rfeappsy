@@ -560,7 +560,7 @@ function handleCompleteJob(ss, payload) {
 
     // 2. UPDATE INVENTORY ITEMS WITH VARIANCE RECONCILIATION
     // ✓ CRITICAL FEATURE: Reconcile estimated vs actual inventory usage
-    
+
     // A. Reconcile Pre-Deducted (Add Back ALL pre-deducted first)
     if (est.inventoryDeducted && est.deductedValues?.inventory) {
         updateInventoryWithLog(ss, est.deductedValues.inventory, true, estimateId, est.customer?.name, actuals.completedBy || "System");
@@ -681,13 +681,13 @@ function handleCompleteJob(ss, payload) {
     // Inventory items variance
     const estimatedInv = est.materials?.inventory || [];
     const actualInv = actuals.inventory || [];
-    
+
     estimatedInv.forEach(estItem => {
         const actItem = actualInv.find(a => a.id === estItem.id);
         const estQty = Number(estItem.quantity || 0);
         const actQty = Number(actItem?.quantity || 0);
         const itemVariance = estQty - actQty;
-        
+
         if (itemVariance !== 0) {
             reconciliation.variances.push({
                 item: estItem.name,
@@ -934,15 +934,15 @@ function handleHeartbeat(ss, payload) {
             foamCounts = safeParse(setRows[i][1]) || foamCounts;
         }
     }
-    
+
     // Get Inventory Items
     const iSheet = ss.getSheetByName(CONSTANTS.TAB_INVENTORY);
     let inventoryItems = [];
     if (iSheet && iSheet.getLastRow() > 1) {
-       const iData = iSheet.getRange(2, CONSTANTS.COL_JSON_INVENTORY, iSheet.getLastRow() - 1, 1).getValues();
-       inventoryItems = iData.map(r => safeParse(r[0])).filter(Boolean);
+        const iData = iSheet.getRange(2, CONSTANTS.COL_JSON_INVENTORY, iSheet.getLastRow() - 1, 1).getValues();
+        inventoryItems = iData.map(r => safeParse(r[0])).filter(Boolean);
     }
-    
+
     const warehouseData = {
         openCellSets: foamCounts.openCellSets || 0,
         closedCellSets: foamCounts.closedCellSets || 0,
@@ -978,10 +978,36 @@ function handleHeartbeat(ss, payload) {
         }
     }
 
+    // 5. Get Material Logs (NEW - OPTIMIZED PARTIAL READ)
+    const logSheet = ensureSheet(ss, CONSTANTS.TAB_LOGS, ["Date", "Job ID", "Customer", "Material Name", "Quantity", "Unit", "Logged By", "JSON_DATA"]);
+    const logLastRow = logSheet.getLastRow();
+    const logStartRow = Math.max(2, logLastRow - 200); // Only read last 200 logs to be safe
+    const logNumRows = logLastRow - logStartRow + 1;
+
+    let newMaterialLogs = [];
+
+    if (logNumRows > 0) {
+        const logData = logSheet.getRange(logStartRow, 1, logNumRows, logSheet.getLastColumn()).getValues();
+        // Loop backwards
+        for (let i = logData.length - 1; i >= 0; i--) {
+            const ts = logData[i][0]; // Date column
+            const logTime = new Date(ts).getTime();
+
+            if (logTime > lastSync) {
+                const json = logData[i][7];
+                const obj = safeParse(json);
+                if (obj) newMaterialLogs.unshift(obj);
+            } else {
+                break;
+            }
+        }
+    }
+
     return {
         jobUpdates,
         messages: newMessages,
         warehouse: warehouseData, // Return full warehouse state when dirty
+        materialLogs: newMaterialLogs,
         serverTime: new Date().toISOString()
     };
 }

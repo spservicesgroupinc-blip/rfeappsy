@@ -144,7 +144,7 @@ type Action =
   | { type: 'UPDATE_SAVED_ESTIMATE'; payload: EstimateRecord }
   | { type: 'RESET_CALCULATOR' }
   | { type: 'LOGOUT' }
-  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[], warehouse?: any } }; // NEW, Updated
+  | { type: 'RFE_HEARTBEAT_UPDATE'; payload: { jobs: EstimateRecord[], messages: any[], warehouse?: any, materialLogs?: any[] } }; // NEW, Updated
 
 // --- REDUCER ---
 const initialState: ContextState = {
@@ -226,6 +226,14 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
         updatedMessages = [...updatedMessages, ...newMsgs];
       }
 
+      // Merge Material Logs (De-duping)
+      let updatedLogs = [...(state.appData.materialLogs || [])];
+      if (action.payload.materialLogs && action.payload.materialLogs.length > 0) {
+        const existingIds = new Set(updatedLogs.map(l => l.id));
+        const newLogs = action.payload.materialLogs.filter(l => !existingIds.has(l.id));
+        updatedLogs = [...updatedLogs, ...newLogs];
+      }
+
       // Merge Warehouse (NEW)
       let updatedWarehouse = state.appData.warehouse;
       if (action.payload.warehouse) {
@@ -238,6 +246,7 @@ const calculatorReducer = (state: ContextState, action: Action): ContextState =>
           ...state.appData,
           savedEstimates: updatedEstimates,
           messages: updatedMessages,
+          materialLogs: updatedLogs, // Apply logs update
           warehouse: updatedWarehouse // Apply warehouse update
         },
         ui: { ...state.ui, lastHeartbeat: new Date().toISOString() }
@@ -289,8 +298,9 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
 
     const interval = setInterval(async () => {
       try {
-        // Only poll if we are not actively syncing (doing heavy lift)
-        if (state.ui.syncStatus === 'syncing') return;
+        // Only poll if we are not actively syncing (doing heavy lift) OR pending (about to sync)
+        // This PREVENTS RACE CONDITIONS where local changes are overwritten by stale server state
+        if (state.ui.syncStatus === 'syncing' || state.ui.syncStatus === 'pending') return;
 
         const now = Date.now();
         if (now - lastPoll < 4000) return; // Minimum 4s gap
@@ -301,7 +311,7 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
         const result = await heartbeat(state.session.spreadsheetId, lastTime);
 
         if (result && result.status === 'success' && result.data) {
-          const { jobUpdates, messages } = result.data;
+          const { jobUpdates, messages, materialLogs } = result.data; // Added materialLogs
 
           let hasRealUpdates = false;
 
@@ -309,6 +319,15 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
           if (messages && messages.length > 0) {
             const existingIds = new Set(state.appData.messages.map(m => m.id));
             if (messages.some(m => !existingIds.has(m.id))) {
+              hasRealUpdates = true;
+            }
+          }
+
+          // Check for actual changes in material logs (NEW)
+          if (materialLogs && materialLogs.length > 0) {
+            const existingIds = new Set(state.appData.materialLogs.map(l => l.id)); // Assuming log objects have IDs
+            // Note: Logs from sheet might not have IDs if parsing fails, but our safeParse handles it
+            if (materialLogs.some(l => !existingIds.has(l.id))) {
               hasRealUpdates = true;
             }
           }
@@ -350,19 +369,7 @@ export const CalculatorProvider: React.FC<{ children: ReactNode }> = ({ children
           }
 
           if (hasRealUpdates) {
-            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages, warehouse: newWarehouse } });
-          } else {
-            // Just update the timestamp silently without full re-render?
-            // Actually, we can dispatch a lightweight timestamp update if we want to acknowledge sync
-            // But for now, just skipping the dispatch prevents the re-render loop.
-            // We do need to update 'lastHeartbeat' REF effectively so we don't ask for the same data 5s later?
-            // NO. The server uses 'lastSync' we sent.
-            // If we sent T1 and got Data D1.
-            // If we don't update state, T1 remains in state.
-            // Next poll, we send T1 again. Server returns D1 again.
-            // We compare D1 == Current. "No change". Loop continues.
-            // This is fine! It prevents re-renders. It costs bandwidth but saves UI glitches.
-            // Ideally we update the watermark silently, but Context doesn't support silent updates.
+            dispatch({ type: 'RFE_HEARTBEAT_UPDATE', payload: { jobs: jobUpdates, messages, warehouse: newWarehouse, materialLogs } });
           }
         }
       } catch (e) {

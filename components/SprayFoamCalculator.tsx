@@ -127,10 +127,18 @@ const SprayFoamCalculator: React.FC = () => {
     };
 
     const handleWarehouseStockChange = (field: 'openCellSets' | 'closedCellSets', value: number) => {
+        const newVal = Math.max(0, value);
+        const newWarehouse = { ...appData.warehouse, [field]: newVal };
+
         dispatch({
             type: 'UPDATE_DATA',
-            payload: { warehouse: { ...appData.warehouse, [field]: Math.max(0, value) } }
+            payload: { warehouse: newWarehouse }
         });
+
+        // Trigger Background Sync
+        if (session?.spreadsheetId) {
+            syncUp({ ...appData, warehouse: newWarehouse }, session.spreadsheetId);
+        }
     };
 
     const handleCreateWarehouseItem = (name: string, unit: string, cost: number) => {
@@ -138,7 +146,14 @@ const SprayFoamCalculator: React.FC = () => {
             id: Math.random().toString(36).substr(2, 9),
             name, unit, unitCost: cost, quantity: 0
         };
-        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: { ...appData.warehouse, items: [...appData.warehouse.items, newItem] } } });
+        const newItems = [...appData.warehouse.items, newItem];
+        const newWarehouse = { ...appData.warehouse, items: newItems };
+
+        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
+
+        if (session?.spreadsheetId) {
+            syncUp({ ...appData, warehouse: newWarehouse }, session.spreadsheetId);
+        }
     };
 
     const handleCustomerSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -174,7 +189,27 @@ const SprayFoamCalculator: React.FC = () => {
 
     const updateWarehouseItem = (id: string, field: string, value: any) => {
         const updatedItems = appData.warehouse.items.map(i => i.id === id ? { ...i, [field]: value } : i);
-        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: { ...appData.warehouse, items: updatedItems } } });
+        const newWarehouse = { ...appData.warehouse, items: updatedItems };
+
+        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
+
+        if (session?.spreadsheetId) {
+            syncUp({ ...appData, warehouse: newWarehouse }, session.spreadsheetId);
+        }
+    };
+
+    // NEW HANDLERS FOR WAREHOUSE SETUP (Moved from inline)
+    const handleAddWarehouseItem = () => {
+        const newItem = { id: Math.random().toString(36).substr(2, 9), name: '', quantity: 0, unit: 'pcs', unitCost: 0 };
+        const newWarehouse = { ...appData.warehouse, items: [...appData.warehouse.items, newItem] };
+        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
+        if (session?.spreadsheetId) syncUp({ ...appData, warehouse: newWarehouse }, session.spreadsheetId);
+    };
+
+    const handleRemoveWarehouseItem = (id: string) => {
+        const newWarehouse = { ...appData.warehouse, items: appData.warehouse.items.filter(i => i.id !== id) };
+        dispatch({ type: 'UPDATE_DATA', payload: { warehouse: newWarehouse } });
+        if (session?.spreadsheetId) syncUp({ ...appData, warehouse: newWarehouse }, session.spreadsheetId);
     };
 
     const addEquipment = () => {
@@ -453,8 +488,8 @@ const SprayFoamCalculator: React.FC = () => {
                 <Warehouse
                     state={appData}
                     onStockChange={handleWarehouseStockChange}
-                    onAddItem={() => dispatch({ type: 'UPDATE_DATA', payload: { warehouse: { ...appData.warehouse, items: [...appData.warehouse.items, { id: Math.random().toString(36).substr(2, 9), name: '', quantity: 0, unit: 'pcs', unitCost: 0 }] } } })}
-                    onRemoveItem={(id) => dispatch({ type: 'UPDATE_DATA', payload: { warehouse: { ...appData.warehouse, items: appData.warehouse.items.filter(i => i.id !== id) } } })}
+                    onAddItem={handleAddWarehouseItem}
+                    onRemoveItem={handleRemoveWarehouseItem}
                     onUpdateItem={updateWarehouseItem}
                     onFinishSetup={() => dispatch({ type: 'SET_VIEW', payload: 'dashboard' })}
                     onViewReport={() => dispatch({ type: 'SET_VIEW', payload: 'material_report' })}
