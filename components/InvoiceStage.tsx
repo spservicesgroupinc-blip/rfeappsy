@@ -252,23 +252,28 @@ export const InvoiceStage: React.FC<InvoiceStageProps> = ({
                                 <CheckCircle2 className="w-5 h-5" /> Payment Recorded
                             </div>
                         ) : (
+                        ) : (
                             <>
-                                <button
-                                    onClick={handleUpdateClick}
-                                    disabled={isProcessing}
-                                    className="px-6 py-4 bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 rounded-xl font-bold uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition-all w-full md:w-auto"
-                                >
-                                    {processingAction === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                    Save Invoice
-                                </button>
-                                <button
-                                    onClick={handleMarkPaidClick}
-                                    disabled={isProcessing}
-                                    className="px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 transition-all w-full md:w-auto"
-                                >
-                                    {processingAction === 'pay' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-                                    Mark as Paid
-                                </button>
+                                {/* MUTUALLY EXCLUSIVE ACTIONS */}
+                                {statusLabel === 'Invoiced' ? (
+                                    <button
+                                        onClick={handleMarkPaidClick}
+                                        disabled={isProcessing}
+                                        className="px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 transition-all w-full md:w-auto"
+                                    >
+                                        {processingAction === 'pay' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                                        Mark as Paid
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={handleUpdateClick}
+                                        disabled={isProcessing}
+                                        className="px-6 py-4 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition-all w-full md:w-auto shadow-lg shadow-sky-200"
+                                    >
+                                        {processingAction === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                        Finalize Invoice
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -422,6 +427,6 @@ export const InvoiceStage: React.FC<InvoiceStageProps> = ({
                 </div>
 
             </div>
-        </div>
+        </div >
     );
 };

@@ -162,31 +162,27 @@ export const EstimateStage: React.FC<EstimateStageProps> = ({
         return estimateLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
     }, [estimateLines]);
 
-    const handleAction = async (type: 'save' | 'print') => {
-        setActionType(type);
+    const handleFinalize = async () => {
         setIsProcessing(true);
 
-        // Update record with lines first
-        // Pass shouldRedirect=false if we are printing, to prevent view switch before upload
-        const shouldRedirect = type === 'save';
+        // STAGE 1: SAVE DATA TO APPS SCRIPT (PERSISTENCE CHECK)
+        // Pass shouldRedirect=false because we need to generate PDF next, staying on this view momentarily.
         const updatedRecord = await saveEstimate(results, undefined, {
             estimateLines: estimateLines,
             totalValue: estimateTotal
-        }, shouldRedirect);
+        }, false);
 
         if (updatedRecord) {
-            if (type === 'print') {
-                // Generate & Upload PDF
-                await generateAndUploadPDF(updatedRecord, 'ESTIMATE');
-                // After upload, then we can confirm/redirect
-                await onConfirm(updatedRecord, false); // pass false to suppress legacy print
-            } else {
-                await onConfirm(updatedRecord, false);
-            }
+            // STAGE 2: GENERATE & UPLOAD PDF
+            // This ensures the PDF is attached to the persisted record
+            await generateAndUploadPDF(updatedRecord, 'ESTIMATE');
+
+            // STAGE 3: EXIT
+            // Now we confirm to parent, which triggers view change to Dashboard
+            await onConfirm(updatedRecord, false);
         }
 
         setIsProcessing(false);
-        setActionType(null);
     };
 
     return (
@@ -209,20 +205,12 @@ export const EstimateStage: React.FC<EstimateStageProps> = ({
                     {/* ACTION BUTTONS */}
                     <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                         <button
-                            onClick={() => handleAction('save')}
+                            onClick={handleFinalize}
                             disabled={isProcessing}
-                            className="px-6 py-4 bg-white border-2 border-slate-100 hover:border-slate-300 text-slate-600 rounded-xl font-bold uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition-all w-full md:w-auto"
+                            className="px-8 py-4 bg-brand hover:bg-brand-hover text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-red-200 transition-all w-full md:w-auto"
                         >
-                            {actionType === 'save' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            Save Estimate
-                        </button>
-                        <button
-                            onClick={() => handleAction('print')}
-                            disabled={isProcessing}
-                            className="px-8 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-slate-200 transition-all w-full md:w-auto"
-                        >
-                            {actionType === 'print' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                            Save & PDF
+                            {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                            Finalize Estimate
                         </button>
                     </div>
                 </div>
