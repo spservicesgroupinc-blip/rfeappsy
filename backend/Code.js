@@ -886,21 +886,26 @@ function handleHeartbeat(ss, payload) {
 
     // 1. CACHE CHECK (Global Dirty Flag)
     // If system hasn't changed since lastSync, return nothing immediately.
+    // 1. CACHE CHECK (Global Dirty Flag)
+    // If system hasn't changed since lastSync, return nothing immediately.
     const lastModifiedStr = cache.get(`DIRTY_${ssId}`);
-    // Safety: If cache is empty, we assume dirty (safest default) to avoid missing updates if cache evicts.
-    // If cache exists, we compare timestamps.
+    // REMOVED: Early return optimization. 
+    // We now ALWAYS read the sheet to ensure warehouse counts are 100% accurate purely from DB.
+    // The cost is slightly higher (1 read per 5s), but correctness is prioritized.
+    /* 
     if (lastModifiedStr) {
         const lastModified = parseInt(lastModifiedStr);
         if (lastModified <= lastSync) {
             return {
                 jobUpdates: [],
                 messages: [],
-                warehouse: null, // No updates
+                warehouse: null, 
                 serverTime: new Date().toISOString(),
                 cached: true
             };
         }
-    }
+    } 
+    */
 
     // 2. Get Job Updates
     const estSheet = ss.getSheetByName(CONSTANTS.TAB_ESTIMATES);
